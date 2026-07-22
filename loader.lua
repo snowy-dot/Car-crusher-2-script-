@@ -1,6 +1,6 @@
 --!nocheck
 -- ============================================
--- CAR CRUSHERS 2 - ADVANCED HUB (STABLE FLY)
+-- CAR CRUSHERS 2 - ADVANCED HUB (SYNTAX FIX)
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -46,13 +46,17 @@ State.Connections = {}
 -- UNLOAD
 -- ============================================
 local function UnloadScript()
-    for _, conn in ipairs(State.Connections) do pcall(function() conn:Disconnect() end) end
+    for _, conn in ipairs(State.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
     State.Connections = {}
     pcall(function() RunService:UnbindFromRenderStep("HubMainLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("FlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("VehicleFlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("CamUnlockLoop") end)
-    for _, obj in pairs(State.ESP_Objects) do if obj.Frame then obj.Frame:Destroy() end end
+    for _, obj in pairs(State.ESP_Objects) do
+        if obj.Frame then obj.Frame:Destroy() end
+    end
     State.ESP_Objects = {}
     Cam.FieldOfView = 70
     Rayfield:Destroy()
@@ -170,7 +174,12 @@ local function createESP(player)
     State.ESP_Objects[player] = {Frame = frame, Box = box, Name = nameLbl}
 end
 
-Players.PlayerRemoving:Connect(function(p) if State.ESP_Objects[p] then State.ESP_Objects[p].Frame:Destroy() State.ESP_Objects[p] = nil end end)
+Players.PlayerRemoving:Connect(function(p) 
+    if State.ESP_Objects[p] then 
+        State.ESP_Objects[p].Frame:Destroy() 
+        State.ESP_Objects[p] = nil 
+    end 
+end)
 
 -- ============================================
 -- MAIN LOOPS
@@ -195,14 +204,22 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                             obj.Box.Position = UDim2.fromOffset(headScreen.X - width/2, headScreen.Y)
                             obj.Box.Size = UDim2.fromOffset(width, height)
                             obj.Box.Visible = true
-                        else obj.Box.Visible = false end
+                        else 
+                            obj.Box.Visible = false 
+                        end
                         if State.ESP_Name then
                             obj.Name.Position = UDim2.fromOffset(headScreen.X, headScreen.Y - 15)
                             obj.Name.Text = player.Name
                             obj.Name.Visible = true
-                        else obj.Name.Visible = false end
-                    else obj.Frame.Visible = false end
-                else obj.Frame.Visible = false end
+                        else 
+                            obj.Name.Visible = false 
+                        end
+                    else 
+                        obj.Frame.Visible = false 
+                    end
+                else 
+                    obj.Frame.Visible = false 
+                end
             end
         end
     end
@@ -230,7 +247,7 @@ end))
 table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.W and State.Speed_Boost then
-        State.Boost_EndTime = tick() + 1.5 -- 1.5 second boost burst
+        State.Boost_EndTime = tick() + 1.5
     end
 end))
 
@@ -260,7 +277,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
--- Vehicle Fly Loop (Fixed: No camera drift, stable stop)
+-- Vehicle Fly Loop
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -282,7 +299,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
             
-            -- Only apply velocity if keys are pressed. Otherwise, zero it out to stop drift.
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
             else
@@ -298,20 +314,11 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
     end
 end))
 
--- Camera Unlock Loop (Allows 360 camera while driving)
+-- Camera Unlock Loop
 RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 3, function()
     if State.UnlockCam then
-        local seat = getMyCarSeat()
-        if seat then
-            -- Override the game's camera lock by forcing it to stay where the mouse is
-            -- This is a simple trick to bypass the game's VehicleCamera fix
-            pcall(function()
-                local playerScripts = LP:WaitForChild("PlayerScripts")
-                -- CC2 uses a custom camera script, but we can force the Roblox camera module to ignore the seat
-                if LP.CameraMode ~= Enum.CameraMode.Classic then
-                    LP.CameraMode = Enum.CameraMode.Classic
-                end
-            end)
+        if LP.CameraMode ~= Enum.CameraMode.Classic then
+            LP.CameraMode = Enum.CameraMode.Classic
         end
     end
 end)
@@ -322,7 +329,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Stable Edition",
+    LoadingSubtitle = "Syntax Fixed",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -467,9 +474,15 @@ TabESP:CreateToggle({
     CurrentValue = false,
     Callback = function(v)
         if v then
-            Lighting.Brightness = 2 Lighting.ClockTime = 14 Lighting.FogEnd = 100000 Lighting.GlobalShadows = false
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 100000
+            Lighting.GlobalShadows = false
         else
-            Lighting.Brightness = 1 Lighting.ClockTime = 12 Lighting.FogEnd = 100000 Lighting.GlobalShadows = true
+            Lighting.Brightness = 1
+            Lighting.ClockTime = 12
+            Lighting.FogEnd = 100000
+            Lighting.GlobalShadows = true
         end
     end
 })
