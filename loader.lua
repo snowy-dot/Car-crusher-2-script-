@@ -25,6 +25,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
+State.Boost_Speed = 600
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -34,7 +35,6 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
--- Cooldown GUI
 local CooldownGui = Instance.new("ScreenGui")
 CooldownGui.Name = "BoostCooldown"
 CooldownGui.ResetOnSpawn = false
@@ -91,7 +91,6 @@ local function getClosestCrusherPad()
     local closest = nil
     local dist = math.huge
     
-    -- Broad search for anything named pad or trigger in the workspace
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and (obj.Name:lower():match("pad") or obj.Name:lower():match("trigger")) then
             local d = (obj.Position - carPos).Magnitude
@@ -139,6 +138,22 @@ local function findAndClickRespawn()
         end
     end
     return false
+end
+
+local function activateNukeBypass()
+    local crushers = Workspace:FindFirstChild("Crushers")
+    if not crushers then return end
+    local nuke = crushers:FindFirstChild("Nuke")
+    if not nuke then return end
+    
+    for _, desc in pairs(nuke:GetDescendants()) do
+        if desc:IsA("ProximityPrompt") then
+            fireproximityprompt(desc)
+        elseif desc:IsA("ClickDetector") then
+            fireclickdetector(desc)
+        end
+    end
+    Rayfield:Notify({Title = "Nuke", Content = "Attempting to activate Nuke...", Duration = 3})
 end
 
 local ESPGui = Instance.new("ScreenGui")
@@ -236,7 +251,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Q to Boost Logic
 table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
@@ -247,24 +261,46 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             CooldownFrame.Visible = true
         end
     end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and State.PickupCar then
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            if carModel and hrp then
+                local wc = Instance.new("WeldConstraint")
+                wc.Name = "HubCarPickup"
+                wc.Part0 = hrp
+                wc.Part1 = carModel.PrimaryPart or seat
+                wc.Parent = hrp
+            end
+        end
+    end
+end))
+
+table.insert(State.Connections, UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local wc = hrp:FindFirstChild("HubCarPickup")
+            if wc then wc:Destroy() end
+        end
+    end
 end))
 
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
-    -- Boost Application
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
                 local camLook = Vector3.new(Cam.CFrame.LookVector.X, 0, Cam.CFrame.LookVector.Z).Unit
                 local currentVel = seat.AssemblyLinearVelocity
-                seat.AssemblyLinearVelocity = Vector3.new(camLook.X * 1000, currentVel.Y, camLook.Z * 1000)
+                seat.AssemblyLinearVelocity = Vector3.new(camLook.X * State.Boost_Speed, currentVel.Y, camLook.Z * State.Boost_Speed)
             end
         else
             State.Boost_Active = false
         end
     end
 
-    -- Cooldown GUI Update
     if State.Q_Boost and State.Boost_Cooldown > tick() then
         local timeLeft = math.ceil(State.Boost_Cooldown - tick())
         CooldownLabel.Text = "Cooldown: " .. tostring(timeLeft) .. "s"
@@ -279,7 +315,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Vehicle Noclip Loop
 table.insert(State.Connections, RunService.Stepped:Connect(function()
     if State.Vehicle_Noclip then
         local seat = getMyCarSeat()
@@ -287,14 +322,16 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
             local carModel = seat:FindFirstAncestorOfClass("Model")
             if carModel then
                 for _, part in pairs(carModel:GetDescendants()) do
-                    if part:IsA("BasePart") then part.CanCollide = false end
+                    if part:IsA("BasePart") then 
+                        part.CanCollide = false 
+                        part.CanQuery = false 
+                    end
                 end
             end
         end
     end
 end))
 
--- Vehicle Fly Loop (Fixed: Perfectly steady hover)
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -307,6 +344,15 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0,0,0)
                 bv.Parent = seat
             end
+            local bav = seat:FindFirstChild("HubVehFlyBAV")
+            if not bav then
+                bav = Instance.new("BodyAngularVelocity")
+                bav.Name = "HubVehFlyBAV"
+                bav.MaxTorque = Vector3.new(99999, 99999, 99999)
+                bav.AngularVelocity = Vector3.new(0, 0, 0)
+                bav.Parent = seat
+            end
+            
             local d = Vector3.new(0, 0, 0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
@@ -324,12 +370,13 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
         local seat = getMyCarSeat()
         if seat then
             local bv = seat:FindFirstChild("HubVehFlyBV")
+            local bav = seat:FindFirstChild("HubVehFlyBAV")
             if bv then bv:Destroy() end
+            if bav then bav:Destroy() end
         end
     end
 end)
 
--- Camera Unlock Loop
 RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 3, function()
     if State.UnlockCam then
         if LP.CameraMode ~= Enum.CameraMode.Classic then
@@ -338,39 +385,10 @@ RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 
     end
 end)
 
--- Right-Click Pickup Logic
-table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton2 and State.PickupCar then
-        local seat = getMyCarSeat()
-        if seat then
-            local carModel = seat:FindFirstAncestorOfClass("Model")
-            local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-            if carModel and hrp then
-                local wc = Instance.new("WeldConstraint")
-                wc.Name = "HubCarPickup"
-                wc.Part0 = hrp
-                wc.Part1 = carModel.PrimaryPart or seat
-                wc.Parent = hrp
-            end
-        end
-    end
-end))
-
-table.insert(State.Connections, UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local wc = hrp:FindFirstChild("HubCarPickup")
-            if wc then wc:Destroy() end
-        end
-    end
-end))
-
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Rocket Booster Edition",
+    LoadingSubtitle = "Stabilizer Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -383,6 +401,7 @@ local TabMisc = Window:CreateTab("Misc", 4483362458)
 
 TabFarm:CreateToggle({Name = "Auto-Crush (Teleport to Pad)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
 TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
+TabFarm:CreateButton({Name = "Bypass Nuke Room (Activate)", Callback = function() activateNukeBypass() end})
 
 TabVehicle:CreateToggle({Name = "Vehicle Fly (Sit in car first)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
@@ -393,13 +412,14 @@ TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q)", CurrentValue = false
     State.Q_Boost = v 
     CooldownFrame.Visible = v
 end})
+TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
-TabVehicle:CreateToggle({Name = "Right-Click Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
+TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
 
-TabVehicle:CreateSection("Vehicle Mass")
+TabVehicle:CreateSection("Gravity Manipulation")
 TabVehicle:CreateButton({
-    Name = "Feather Mode (Weightless)",
+    Name = "Moon Gravity (Floaty)",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
@@ -408,21 +428,21 @@ TabVehicle:CreateButton({
             for _, p in pairs(carModel:GetDescendants()) do
                 if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
             end
-            local bf = seat:FindFirstChild("HubFeatherForce")
+            local bf = seat:FindFirstChild("HubMoonForce")
             if not bf then
                 bf = Instance.new("BodyForce")
-                bf.Name = "HubFeatherForce"
+                bf.Name = "HubMoonForce"
                 bf.Parent = seat
             end
-            bf.Force = Vector3.new(0, mass * Workspace.Gravity, 0)
-            local tankBf = seat:FindFirstChild("HubTankForce")
-            if tankBf then tankBf:Destroy() end
-            Rayfield:Notify({Title = "Mass", Content = "Car is now weightless!", Duration = 2})
+            bf.Force = Vector3.new(0, mass * Workspace.Gravity * 0.8, 0)
+            local crushBf = seat:FindFirstChild("HubCrushForce")
+            if crushBf then crushBf:Destroy() end
+            Rayfield:Notify({Title = "Gravity", Content = "Moon gravity activated!", Duration = 2})
         end
     end
 })
 TabVehicle:CreateButton({
-    Name = "Tank Mode (Heavy Downforce)",
+    Name = "Crush Mode (Heavy Downforce)",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
@@ -431,29 +451,29 @@ TabVehicle:CreateButton({
             for _, p in pairs(carModel:GetDescendants()) do
                 if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
             end
-            local bf = seat:FindFirstChild("HubTankForce")
+            local bf = seat:FindFirstChild("HubCrushForce")
             if not bf then
                 bf = Instance.new("BodyForce")
-                bf.Name = "HubTankForce"
+                bf.Name = "HubCrushForce"
                 bf.Parent = seat
             end
-            bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 2, 0)
-            local featherBf = seat:FindFirstChild("HubFeatherForce")
-            if featherBf then featherBf:Destroy() end
-            Rayfield:Notify({Title = "Mass", Content = "Car is now heavy!", Duration = 2})
+            bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 0.5, 0)
+            local moonBf = seat:FindFirstChild("HubMoonForce")
+            if moonBf then moonBf:Destroy() end
+            Rayfield:Notify({Title = "Gravity", Content = "Crush mode activated!", Duration = 2})
         end
     end
 })
 TabVehicle:CreateButton({
-    Name = "Reset Vehicle Mass",
+    Name = "Reset Gravity",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
-            local f1 = seat:FindFirstChild("HubFeatherForce")
-            local f2 = seat:FindFirstChild("HubTankForce")
+            local f1 = seat:FindFirstChild("HubMoonForce")
+            local f2 = seat:FindFirstChild("HubCrushForce")
             if f1 then f1:Destroy() end
             if f2 then f2:Destroy() end
-            Rayfield:Notify({Title = "Mass", Content = "Vehicle mass reset.", Duration = 2})
+            Rayfield:Notify({Title = "Gravity", Content = "Gravity reset to normal.", Duration = 2})
         end
     end
 })
@@ -471,7 +491,7 @@ TabVehicle:CreateButton({
                     if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
                 end
                 local bf = Instance.new("BodyForce")
-                bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 10, 0)
+                bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 5, 0)
                 bf.Parent = seat
                 game:GetService("Debris"):AddItem(bf, 2)
             end
