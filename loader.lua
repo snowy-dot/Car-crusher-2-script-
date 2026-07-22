@@ -1,6 +1,6 @@
 --!nocheck
 -- ============================================
--- CAR CRUSHERS 2 - ADVANCED HUB (MORE FEATURES)
+-- CAR CRUSHERS 2 - ADVANCED HUB (PHYSICS FIX)
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -27,6 +27,7 @@ State.ESP_Box = true
 State.ESP_Name = true
 State.ESP_Objects = {}
 State.AutoFarm = false
+State.AutoRespawn = false
 State.Fly_Enabled = false
 State.Fly_Speed = 50
 State.Vehicle_Fly = false
@@ -113,6 +114,25 @@ local function doAutoFarm()
     end
 end
 
+local function findRespawnButton()
+    local playerGui = LP:WaitForChild("PlayerGui")
+    for _, gui in pairs(playerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, obj in pairs(gui:GetDescendants()) do
+                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
+                    local nameMatch = obj.Name:lower():match("respawn") or obj.Name:lower():match("spawn")
+                    local textMatch = obj:IsA("TextButton") and (obj.Text:lower():match("respawn") or obj.Text:lower():match("spawn"))
+                    local childTextMatch = obj:FindFirstChild("TextLabel") and (obj.TextLabel.Text:lower():match("respawn") or obj.TextLabel.Text:lower():match("spawn"))
+                    if nameMatch or textMatch or childTextMatch then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- ============================================
 -- ESP SYSTEM
 -- ============================================
@@ -152,7 +172,6 @@ Players.PlayerRemoving:Connect(function(p) if State.ESP_Objects[p] then State.ES
 -- MAIN LOOPS
 -- ============================================
 RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1, function()
-    -- ESP Logic
     if State.ESP_Enabled then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LP then
@@ -185,21 +204,37 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
     end
 end)
 
--- AutoFarm, Speed Boost & Vehicle Noclip Loop
+-- AutoFarm & AutoRespawn Loop
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.AutoFarm then
         doAutoFarm()
         task.wait(3) 
     end
-    
-    if State.Speed_Boost then
+    if State.AutoRespawn then
+        local btn = findRespawnButton()
+        if btn then
+            pcall(function() firesignal(btn.MouseButton1Click) end)
+            if btn:IsA("TextButton") then pcall(function() btn.Activated:Fire() end) end
+        end
+        task.wait(0.5)
+    end
+end))
+
+-- Speed Boost Loop (Fixed: Only on W, preserves turning)
+table.insert(State.Connections, RunService.Heartbeat:Connect(function()
+    if State.Speed_Boost and UserInputService:IsKeyDown(Enum.KeyCode.W) then
         local seat = getMyCarSeat()
         if seat then
             local lookVec = seat.CFrame.LookVector
-            seat.AssemblyLinearVelocity = Vector3.new(lookVec.X * State.Boost_Amt, seat.AssemblyLinearVelocity.Y, lookVec.Z * State.Boost_Amt)
+            local currentVel = seat.AssemblyLinearVelocity
+            -- Only apply forward force, preserve Y (gravity) and X/Z (turning) 
+            seat.AssemblyLinearVelocity = Vector3.new(lookVec.X * State.Boost_Amt, currentVel.Y, lookVec.Z * State.Boost_Amt)
         end
     end
+end))
 
+-- Vehicle Noclip Loop (Fixed: Moved to Stepped for reliable collision bypass)
+table.insert(State.Connections, RunService.Stepped:Connect(function()
     if State.Vehicle_Noclip then
         local seat = getMyCarSeat()
         if seat then
@@ -213,7 +248,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Vehicle Fly Loop
+-- Vehicle Fly Loop (Fixed: No drift, auto-align to camera)
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -226,6 +261,7 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0,0,0)
                 bv.Parent = seat
             end
+            
             local d = Vector3.new(0, 0, 0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
@@ -233,7 +269,14 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
-            bv.Velocity = d * State.Vehicle_Speed
+            
+            -- If keys are pressed, move and align to camera. Otherwise, freeze in air.
+            if d.Magnitude > 0 then
+                bv.Velocity = d.Unit * State.Vehicle_Speed
+                seat.CFrame = CFrame.lookAt(seat.Position, seat.Position + Cam.CFrame.LookVector)
+            else
+                bv.Velocity = Vector3.new(0, 0, 0)
+            end
         end
     else
         local seat = getMyCarSeat()
@@ -250,7 +293,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Advanced Edition",
+    LoadingSubtitle = "Physics Fix Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -262,14 +305,8 @@ local TabESP = Window:CreateTab("Visuals", 4483362458)
 local TabMisc = Window:CreateTab("Misc", 4483362458)
 
 -- AutoFarm Tab
-TabFarm:CreateToggle({
-    Name = "Auto-Crush (Teleport to Pad)",
-    CurrentValue = false,
-    Callback = function(v)
-        State.AutoFarm = v
-        Rayfield:Notify({Title = "AutoFarm", Content = v and "Enabled. Sit in your car." or "Disabled.", Duration = 3})
-    end
-})
+TabFarm:CreateToggle({Name = "Auto-Crush (Teleport to Pad)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
+TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
 
 -- Vehicle Tab
 TabVehicle:CreateToggle({Name = "Vehicle Fly (Sit in car first)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
@@ -277,38 +314,30 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 
 TabVehicle:CreateSection("Physics & Speed")
 TabVehicle:CreateToggle({Name = "Speed Boost (Hold W)", CurrentValue = false, Callback = function(v) State.Speed_Boost = v end})
-TabVehicle:CreateSlider({Name = "Boost Speed", Range = {50, 1000}, Increment = 10, CurrentValue = 150, Callback = function(v) State.Boost_Amt = v end})
+TabVehicle:CreateSlider({Name = "Boost Speed", Range = {50, 2000}, Increment = 10, CurrentValue = 150, Callback = function(v) State.Boost_Amt = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 
-TabVehicle:CreateSection("Vehicle Mass")
-TabVehicle:CreateButton({
-    Name = "Make Car Extremely Light",
-    Callback = function()
+TabVehicle:CreateSection("Vehicle Mass (Density)")
+TabVehicle:CreateSlider({
+    Name = "Density (0.1=Feather, 10=Tank)",
+    Range = {0.1, 10},
+    Increment = 0.1,
+    CurrentValue = 1,
+    Callback = function(v)
         local seat = getMyCarSeat()
         if seat then
             local carModel = seat:FindFirstAncestorOfClass("Model")
             for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0, 0) end
+                -- Only change body parts, skip wheels so suspension doesn't break
+                if p:IsA("BasePart") and not p.Name:lower():match("wheel") then 
+                    p.CustomPhysicalProperties = PhysicalProperties.new(v, 0.5, 0.5) 
+                end
             end
-            Rayfield:Notify({Title = "Mass", Content = "Car is now light!", Duration = 2})
         end
     end
 })
 TabVehicle:CreateButton({
-    Name = "Make Car Extremely Heavy",
-    Callback = function()
-        local seat = getMyCarSeat()
-        if seat then
-            local carModel = seat:FindFirstAncestorOfClass("Model")
-            for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0) end
-            end
-            Rayfield:Notify({Title = "Mass", Content = "Car is now heavy!", Duration = 2})
-        end
-    end
-})
-TabVehicle:CreateButton({
-    Name = "Reset Car Mass",
+    Name = "Reset Vehicle Mass",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
@@ -316,7 +345,7 @@ TabVehicle:CreateButton({
             for _, p in pairs(carModel:GetDescendants()) do
                 if p:IsA("BasePart") then p.CustomPhysicalProperties = nil end
             end
-            Rayfield:Notify({Title = "Mass", Content = "Car mass reset.", Duration = 2})
+            Rayfield:Notify({Title = "Mass", Content = "Vehicle mass reset.", Duration = 2})
         end
     end
 })
@@ -363,7 +392,7 @@ table.insert(State.Connections, UserInputService.JumpRequest:Connect(function()
     end
 end))
 
-table.insert(State.Connections, RunService.Heartbeat:Connect(function()
+table.insert(State.Connections, RunService.Stepped:Connect(function()
     if State.NoClip and LP.Character then
         for _, part in pairs(LP.Character:GetDescendants()) do
             if part:IsA("BasePart") then part.CanCollide = false end
