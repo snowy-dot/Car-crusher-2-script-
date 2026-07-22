@@ -1,8 +1,4 @@
 --!nocheck
--- ============================================
--- CAR CRUSHERS 2 - ADVANCED HUB (SYNTAX FIX)
--- ============================================
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -12,15 +8,9 @@ local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 local Cam = Workspace.CurrentCamera
 
--- Load Rayfield
-local Rayfield = nil
-pcall(function() Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))() end)
-if not Rayfield then
-    pcall(function() Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))() end)
-end
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 if not Rayfield then return end
 
--- State
 local State = {}
 State.ESP_Enabled = false
 State.ESP_Box = true
@@ -42,29 +32,19 @@ State.UnlockCam = false
 State.AntiFling = false
 State.Connections = {}
 
--- ============================================
--- UNLOAD
--- ============================================
 local function UnloadScript()
-    for _, conn in ipairs(State.Connections) do
-        pcall(function() conn:Disconnect() end)
-    end
+    for _, conn in ipairs(State.Connections) do pcall(function() conn:Disconnect() end) end
     State.Connections = {}
     pcall(function() RunService:UnbindFromRenderStep("HubMainLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("FlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("VehicleFlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("CamUnlockLoop") end)
-    for _, obj in pairs(State.ESP_Objects) do
-        if obj.Frame then obj.Frame:Destroy() end
-    end
+    for _, obj in pairs(State.ESP_Objects) do if obj.Frame then obj.Frame:Destroy() end end
     State.ESP_Objects = {}
     Cam.FieldOfView = 70
     Rayfield:Destroy()
 end
 
--- ============================================
--- CC2 SPECIFIC LOGIC
--- ============================================
 local function getMyCarSeat()
     local char = LP.Character
     if not char then return nil end
@@ -94,7 +74,6 @@ local function getClosestCrusherPad()
             end
         end
         if not pad then pad = crusher.PrimaryPart or crusher:FindFirstChildWhichIsA("BasePart") end
-        
         if pad then
             local d = (pad.Position - carPos).Magnitude
             if d < dist then
@@ -141,9 +120,6 @@ local function findAndClickRespawn()
     return false
 end
 
--- ============================================
--- ESP SYSTEM
--- ============================================
 local ESPGui = Instance.new("ScreenGui")
 ESPGui.Name = "UniversalESP"
 ESPGui.ResetOnSpawn = false
@@ -174,16 +150,8 @@ local function createESP(player)
     State.ESP_Objects[player] = {Frame = frame, Box = box, Name = nameLbl}
 end
 
-Players.PlayerRemoving:Connect(function(p) 
-    if State.ESP_Objects[p] then 
-        State.ESP_Objects[p].Frame:Destroy() 
-        State.ESP_Objects[p] = nil 
-    end 
-end)
+Players.PlayerRemoving:Connect(function(p) if State.ESP_Objects[p] then State.ESP_Objects[p].Frame:Destroy() State.ESP_Objects[p] = nil end end)
 
--- ============================================
--- MAIN LOOPS
--- ============================================
 RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1, function()
     if State.ESP_Enabled then
         for _, player in pairs(Players:GetPlayers()) do
@@ -204,28 +172,19 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                             obj.Box.Position = UDim2.fromOffset(headScreen.X - width/2, headScreen.Y)
                             obj.Box.Size = UDim2.fromOffset(width, height)
                             obj.Box.Visible = true
-                        else 
-                            obj.Box.Visible = false 
-                        end
+                        else obj.Box.Visible = false end
                         if State.ESP_Name then
                             obj.Name.Position = UDim2.fromOffset(headScreen.X, headScreen.Y - 15)
                             obj.Name.Text = player.Name
                             obj.Name.Visible = true
-                        else 
-                            obj.Name.Visible = false 
-                        end
-                    else 
-                        obj.Frame.Visible = false 
-                    end
-                else 
-                    obj.Frame.Visible = false 
-                end
+                        else obj.Name.Visible = false end
+                    else obj.Frame.Visible = false end
+                else obj.Frame.Visible = false end
             end
         end
     end
 end)
 
--- AutoFarm & AutoRespawn & AntiFling Loop
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.AutoFarm then
         doAutoFarm()
@@ -243,7 +202,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Speed Boost (Burst on W Press)
 table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.W and State.Speed_Boost then
@@ -262,7 +220,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Vehicle Noclip Loop
 table.insert(State.Connections, RunService.Stepped:Connect(function()
     if State.Vehicle_Noclip then
         local seat = getMyCarSeat()
@@ -277,7 +234,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
--- Vehicle Fly Loop
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -290,7 +246,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0,0,0)
                 bv.Parent = seat
             end
-            
             local d = Vector3.new(0, 0, 0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
@@ -298,7 +253,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
-            
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
             else
@@ -312,9 +266,8 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if bv then bv:Destroy() end
         end
     end
-end))
+end)
 
--- Camera Unlock Loop
 RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 3, function()
     if State.UnlockCam then
         if LP.CameraMode ~= Enum.CameraMode.Classic then
@@ -323,13 +276,10 @@ RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 
     end
 end)
 
--- ============================================
--- UI SETUP
--- ============================================
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Syntax Fixed",
+    LoadingSubtitle = "Direct Load Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -340,14 +290,11 @@ local TabLocal = Window:CreateTab("Local", 4483362458)
 local TabESP = Window:CreateTab("Visuals", 4483362458)
 local TabMisc = Window:CreateTab("Misc", 4483362458)
 
--- AutoFarm Tab
 TabFarm:CreateToggle({Name = "Auto-Crush (Teleport to Pad)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
 TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
 
--- Vehicle Tab
 TabVehicle:CreateToggle({Name = "Vehicle Fly (Sit in car first)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
-
 TabVehicle:CreateSection("Physics & Speed")
 TabVehicle:CreateToggle({Name = "Burst Boost (Press W)", CurrentValue = false, Callback = function(v) State.Speed_Boost = v end})
 TabVehicle:CreateSlider({Name = "Boost Power", Range = {50, 2000}, Increment = 10, CurrentValue = 300, Callback = function(v) State.Boost_Amt = v end})
@@ -363,9 +310,7 @@ TabVehicle:CreateButton({
         if seat then
             local carModel = seat:FindFirstAncestorOfClass("Model")
             for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then 
-                    p.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0, 0) 
-                end
+                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0, 0) end
             end
             Rayfield:Notify({Title = "Mass", Content = "Car is now light as a feather!", Duration = 2})
         end
@@ -415,7 +360,6 @@ TabVehicle:CreateButton({
     end
 })
 
--- Local Tab
 TabLocal:CreateToggle({
     Name = "Enable Fly (Player)",
     CurrentValue = false,
@@ -465,7 +409,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
--- Visuals Tab
 TabESP:CreateToggle({Name = "Enable Player ESP", CurrentValue = false, Callback = function(v) State.ESP_Enabled = v end})
 TabESP:CreateToggle({Name = "Boxes", CurrentValue = true, Callback = function(v) State.ESP_Box = v end})
 TabESP:CreateToggle({Name = "Names", CurrentValue = true, Callback = function(v) State.ESP_Name = v end})
@@ -490,7 +433,6 @@ TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, Curr
 TabESP:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
 TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
 
--- Misc Tab
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
 Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Sit in your car to use features.", Duration = 5})
