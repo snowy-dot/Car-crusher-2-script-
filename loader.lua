@@ -1,6 +1,6 @@
 --!nocheck
 -- ============================================
--- CAR CRUSHERS 2 - ADVANCED HUB
+-- CAR CRUSHERS 2 - ADVANCED HUB (FIXED)
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -29,7 +29,9 @@ State.AutoFarm = false
 State.Fly_Enabled = false
 State.Fly_Speed = 50
 State.Vehicle_Fly = false
-State.Vehicle_Speed = 100
+State.Vehicle_Speed = 150
+State.Speed_Boost = false
+State.Boost_Amt = 150
 State.NoClip = false
 State.InfJump = false
 State.Connections = {}
@@ -51,47 +53,45 @@ end
 -- ============================================
 -- CC2 SPECIFIC LOGIC
 -- ============================================
--- Find the car the player is currently driving
-local function getMyCar()
+-- Find the VehicleSeat the player is currently sitting in
+local function getMyCarSeat()
     local char = LP.Character
     if not char then return nil end
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.SeatPart then
-        local seat = hum.SeatPart
-        local carModel = seat:FindFirstAncestorOfClass("Model")
-        if carModel and carModel:FindFirstChild("Body") then
-            return carModel
-        end
+    if hum and hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") then
+        return hum.SeatPart
     end
     return nil
 end
 
--- Find the closest crusher pad to teleport to
+-- Find the closest crusher pad
 local function getClosestCrusherPad()
-    local myCar = getMyCar()
-    if not myCar then return nil end
-    local carPos = myCar:GetPivot().Position
+    local seat = getMyCarSeat()
+    if not seat then return nil end
+    local carPos = seat.Position
     local closest = nil
     local dist = math.huge
     
-    if Workspace:FindFirstChild("Crushers") then
-        for _, crusher in pairs(Workspace.Crushers:GetChildren()) do
-            -- Look for a part named Pad, Trigger, or DropZone inside the crusher
-            local pad = crusher:FindFirstChild("Pad") or crusher:FindFirstChild("Trigger") or crusher:FindFirstChild("DropZone")
-            if not pad then
-                for _, desc in pairs(crusher:GetDescendants()) do
-                    if desc:IsA("BasePart") and (desc.Name:lower():match("pad") or desc.Name:lower():match("trigger")) then
-                        pad = desc
-                        break
-                    end
-                end
+    local crushers = Workspace:FindFirstChild("Crushers")
+    if not crushers then return nil end
+    
+    for _, crusher in pairs(crushers:GetChildren()) do
+        local pad = nil
+        -- Look for common pad names
+        for _, desc in pairs(crusher:GetDescendants()) do
+            if desc:IsA("BasePart") and (desc.Name:lower():match("pad") or desc.Name:lower():match("trigger") or desc.Name:lower():match("zone")) then
+                pad = desc
+                break
             end
-            if pad then
-                local d = (pad.Position - carPos).Magnitude
-                if d < dist then
-                    dist = d
-                    closest = pad
-                end
+        end
+        -- Fallback to crusher's primary part
+        if not pad then pad = crusher.PrimaryPart or crusher:FindFirstChildWhichIsA("BasePart") end
+        
+        if pad then
+            local d = (pad.Position - carPos).Magnitude
+            if d < dist then
+                dist = d
+                closest = pad
             end
         end
     end
@@ -99,12 +99,18 @@ local function getClosestCrusherPad()
 end
 
 local function doAutoFarm()
-    local myCar = getMyCar()
-    if myCar then
+    local seat = getMyCarSeat()
+    if seat then
         local pad = getClosestCrusherPad()
         if pad then
-            -- Teleport car to the pad
-            myCar:PivotTo(CFrame.new(pad.Position + Vector3.new(0, 5, 0)))
+            -- Teleport the car seat (and physics parts) to the pad
+            local targetCFrame = CFrame.new(pad.Position + Vector3.new(0, 5, 0))
+            seat.CFrame = targetCFrame
+            -- Also move the rest of the car if it's a model
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            if carModel and carModel.PrimaryPart then
+                carModel:PivotTo(targetCFrame)
+            end
         end
     end
 end
@@ -181,27 +187,35 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
     end
 end)
 
--- AutoFarm Loop
+-- AutoFarm & Speed Boost Loop
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.AutoFarm then
         doAutoFarm()
         task.wait(3) -- Wait for car to crush
+    end
+    
+    if State.Speed_Boost then
+        local seat = getMyCarSeat()
+        if seat then
+            -- Apply forward velocity based on car's look direction
+            local lookVec = seat.CFrame.LookVector
+            seat.AssemblyLinearVelocity = Vector3.new(lookVec.X * State.Boost_Amt, seat.AssemblyLinearVelocity.Y, lookVec.Z * State.Boost_Amt)
+        end
     end
 end))
 
 -- Vehicle Fly Loop
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
-        local car = getMyCar()
-        if car and car.PrimaryPart then
-            local hrp = car.PrimaryPart
-            local bv = hrp:FindFirstChild("HubVehFlyBV")
+        local seat = getMyCarSeat()
+        if seat then
+            local bv = seat:FindFirstChild("HubVehFlyBV")
             if not bv then
                 bv = Instance.new("BodyVelocity")
                 bv.Name = "HubVehFlyBV"
                 bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                 bv.Velocity = Vector3.new(0,0,0)
-                bv.Parent = hrp
+                bv.Parent = seat
             end
             local d = Vector3.new(0, 0, 0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
@@ -213,9 +227,9 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             bv.Velocity = d * State.Vehicle_Speed
         end
     else
-        local car = getMyCar()
-        if car and car.PrimaryPart then
-            local bv = car.PrimaryPart:FindFirstChild("HubVehFlyBV")
+        local seat = getMyCarSeat()
+        if seat then
+            local bv = seat:FindFirstChild("HubVehFlyBV")
             if bv then bv:Destroy() end
         end
     end
@@ -254,7 +268,15 @@ TabVehicle:CreateToggle({
     CurrentValue = false,
     Callback = function(v) State.Vehicle_Fly = v end
 })
-TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 100, Callback = function(v) State.Vehicle_Speed = v end})
+TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
+
+TabVehicle:CreateSection("Speed Hacks")
+TabVehicle:CreateToggle({
+    Name = "Speed Boost (Hold W)",
+    CurrentValue = false,
+    Callback = function(v) State.Speed_Boost = v end
+})
+TabVehicle:CreateSlider({Name = "Boost Speed", Range = {50, 1000}, Increment = 10, CurrentValue = 150, Callback = function(v) State.Boost_Amt = v end})
 
 -- Local Tab
 TabLocal:CreateToggle({
@@ -326,4 +348,4 @@ TabESP:CreateToggle({
 -- Misc Tab
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Sit in your car to use AutoFarm/Vehicle Fly.", Duration = 5})
+Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Sit in your car to use features.", Duration = 5})
