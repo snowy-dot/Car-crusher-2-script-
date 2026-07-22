@@ -1,6 +1,6 @@
 --!nocheck
 -- ============================================
--- CAR CRUSHERS 2 - ADVANCED HUB (FIXED)
+-- CAR CRUSHERS 2 - ADVANCED HUB (MORE FEATURES)
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 local Cam = Workspace.CurrentCamera
 
@@ -30,10 +31,12 @@ State.Fly_Enabled = false
 State.Fly_Speed = 50
 State.Vehicle_Fly = false
 State.Vehicle_Speed = 150
+State.Vehicle_Noclip = false
 State.Speed_Boost = false
 State.Boost_Amt = 150
 State.NoClip = false
 State.InfJump = false
+State.FOV_Amt = 70
 State.Connections = {}
 
 -- ============================================
@@ -47,13 +50,13 @@ local function UnloadScript()
     pcall(function() RunService:UnbindFromRenderStep("VehicleFlyLoop") end)
     for _, obj in pairs(State.ESP_Objects) do if obj.Frame then obj.Frame:Destroy() end end
     State.ESP_Objects = {}
+    Cam.FieldOfView = 70
     Rayfield:Destroy()
 end
 
 -- ============================================
 -- CC2 SPECIFIC LOGIC
 -- ============================================
--- Find the VehicleSeat the player is currently sitting in
 local function getMyCarSeat()
     local char = LP.Character
     if not char then return nil end
@@ -64,7 +67,6 @@ local function getMyCarSeat()
     return nil
 end
 
--- Find the closest crusher pad
 local function getClosestCrusherPad()
     local seat = getMyCarSeat()
     if not seat then return nil end
@@ -77,14 +79,12 @@ local function getClosestCrusherPad()
     
     for _, crusher in pairs(crushers:GetChildren()) do
         local pad = nil
-        -- Look for common pad names
         for _, desc in pairs(crusher:GetDescendants()) do
             if desc:IsA("BasePart") and (desc.Name:lower():match("pad") or desc.Name:lower():match("trigger") or desc.Name:lower():match("zone")) then
                 pad = desc
                 break
             end
         end
-        -- Fallback to crusher's primary part
         if not pad then pad = crusher.PrimaryPart or crusher:FindFirstChildWhichIsA("BasePart") end
         
         if pad then
@@ -103,10 +103,8 @@ local function doAutoFarm()
     if seat then
         local pad = getClosestCrusherPad()
         if pad then
-            -- Teleport the car seat (and physics parts) to the pad
             local targetCFrame = CFrame.new(pad.Position + Vector3.new(0, 5, 0))
             seat.CFrame = targetCFrame
-            -- Also move the rest of the car if it's a model
             local carModel = seat:FindFirstAncestorOfClass("Model")
             if carModel and carModel.PrimaryPart then
                 carModel:PivotTo(targetCFrame)
@@ -187,19 +185,30 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
     end
 end)
 
--- AutoFarm & Speed Boost Loop
+-- AutoFarm, Speed Boost & Vehicle Noclip Loop
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.AutoFarm then
         doAutoFarm()
-        task.wait(3) -- Wait for car to crush
+        task.wait(3) 
     end
     
     if State.Speed_Boost then
         local seat = getMyCarSeat()
         if seat then
-            -- Apply forward velocity based on car's look direction
             local lookVec = seat.CFrame.LookVector
             seat.AssemblyLinearVelocity = Vector3.new(lookVec.X * State.Boost_Amt, seat.AssemblyLinearVelocity.Y, lookVec.Z * State.Boost_Amt)
+        end
+    end
+
+    if State.Vehicle_Noclip then
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            if carModel then
+                for _, part in pairs(carModel:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
         end
     end
 end))
@@ -263,20 +272,54 @@ TabFarm:CreateToggle({
 })
 
 -- Vehicle Tab
-TabVehicle:CreateToggle({
-    Name = "Vehicle Fly (Sit in car first)",
-    CurrentValue = false,
-    Callback = function(v) State.Vehicle_Fly = v end
-})
+TabVehicle:CreateToggle({Name = "Vehicle Fly (Sit in car first)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
 
-TabVehicle:CreateSection("Speed Hacks")
-TabVehicle:CreateToggle({
-    Name = "Speed Boost (Hold W)",
-    CurrentValue = false,
-    Callback = function(v) State.Speed_Boost = v end
-})
+TabVehicle:CreateSection("Physics & Speed")
+TabVehicle:CreateToggle({Name = "Speed Boost (Hold W)", CurrentValue = false, Callback = function(v) State.Speed_Boost = v end})
 TabVehicle:CreateSlider({Name = "Boost Speed", Range = {50, 1000}, Increment = 10, CurrentValue = 150, Callback = function(v) State.Boost_Amt = v end})
+TabVehicle:CreateToggle({Name = "Vehicle Noclip", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
+
+TabVehicle:CreateSection("Vehicle Mass")
+TabVehicle:CreateButton({
+    Name = "Make Car Extremely Light",
+    Callback = function()
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            for _, p in pairs(carModel:GetDescendants()) do
+                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0, 0) end
+            end
+            Rayfield:Notify({Title = "Mass", Content = "Car is now light!", Duration = 2})
+        end
+    end
+})
+TabVehicle:CreateButton({
+    Name = "Make Car Extremely Heavy",
+    Callback = function()
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            for _, p in pairs(carModel:GetDescendants()) do
+                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0) end
+            end
+            Rayfield:Notify({Title = "Mass", Content = "Car is now heavy!", Duration = 2})
+        end
+    end
+})
+TabVehicle:CreateButton({
+    Name = "Reset Car Mass",
+    Callback = function()
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            for _, p in pairs(carModel:GetDescendants()) do
+                if p:IsA("BasePart") then p.CustomPhysicalProperties = nil end
+            end
+            Rayfield:Notify({Title = "Mass", Content = "Car mass reset.", Duration = 2})
+        end
+    end
+})
 
 -- Local Tab
 TabLocal:CreateToggle({
@@ -311,7 +354,7 @@ TabLocal:CreateToggle({
 })
 TabLocal:CreateSlider({Name = "Player Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) State.Fly_Speed = v end})
 TabLocal:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Callback = function(v) State.InfJump = v end})
-TabLocal:CreateToggle({Name = "Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
+TabLocal:CreateToggle({Name = "Player Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
 
 table.insert(State.Connections, UserInputService.JumpRequest:Connect(function()
     if State.InfJump and LP.Character then
@@ -336,7 +379,6 @@ TabESP:CreateToggle({
     Name = "Fullbright",
     CurrentValue = false,
     Callback = function(v)
-        local Lighting = game:GetService("Lighting")
         if v then
             Lighting.Brightness = 2 Lighting.ClockTime = 14 Lighting.FogEnd = 100000 Lighting.GlobalShadows = false
         else
@@ -344,6 +386,9 @@ TabESP:CreateToggle({
         end
     end
 })
+TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, CurrentValue = 70, Callback = function(v) Cam.FieldOfView = v end})
+TabESP:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
+TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
 
 -- Misc Tab
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
