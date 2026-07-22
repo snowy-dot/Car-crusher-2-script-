@@ -165,6 +165,20 @@ local function activateNukeBypass()
             pcall(function() desc.Activated:Fire() end)
         end
     end
+    -- Deep search for SurfaceGui/BillboardGui buttons
+    for _, desc in pairs(nuke:GetDescendants()) do
+        if desc:IsA("SurfaceGui") or desc:IsA("BillboardGui") then
+            for _, btn in pairs(desc:GetDescendants()) do
+                if (btn:IsA("TextButton") or btn:IsA("ImageButton")) and btn.Visible then
+                    btn.Active = true
+                    pcall(function() firesignal(btn.MouseButton1Down) end)
+                    pcall(function() firesignal(btn.MouseButton1Click) end)
+                    pcall(function() firesignal(btn.MouseButton1Up) end)
+                    pcall(function() btn.Activated:Fire() end)
+                end
+            end
+        end
+    end
     Rayfield:Notify({Title = "Nuke", Content = "Attempting to activate Nuke...", Duration = 3})
 end
 
@@ -231,7 +245,6 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                         obj.Frame.Visible = true
                         local legScreen = Cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
                         local height = math.abs(headScreen.Y - legScreen.Y)
-                        -- Infinite ESP: Set a minimum height so it doesn't disappear when far away
                         if height < 15 then
                             height = 15
                         end
@@ -332,7 +345,6 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
-    -- Rocket Booster (Fixed: Uses BodyVelocity for smooth physics)
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
@@ -389,6 +401,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
         end
     end
 
+    -- Phase Walls: Added CanTouch = false to stop teleporters
     if State.PhaseWalls and LP.Character then
         for _, part in pairs(LP.Character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -434,8 +447,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
-            
-            -- Fixed: Changed to Space and LeftCtrl for up/down
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.new(0, 1, 0) end
             
