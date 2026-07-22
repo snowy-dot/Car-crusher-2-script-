@@ -193,7 +193,6 @@ end
 -- MAIN LOOPS
 -- ============================================
 RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1, function()
-    -- Player ESP
     if State.ESP_Enabled then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LP then
@@ -225,7 +224,6 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
         end
     end
 
-    -- Crusher ESP
     if State.Crusher_ESP then
         drawCrusherESP()
         for objName, obj in pairs(State.ESP_Objects) do
@@ -255,7 +253,6 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
     end
 end)
 
--- AutoFarm, AutoRespawn, AntiFling & ReWeld Loop
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.AutoFarm then
         doAutoFarm()
@@ -286,7 +283,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Speed Boost (Fixed: Preserves turning and gravity)
+-- Speed Boost (Fixed: Uses Camera LookVector to avoid backward boosting, preserves gravity)
 table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.W and State.Speed_Boost then
@@ -298,12 +295,11 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Speed_Boost and tick() < State.Boost_EndTime then
         local seat = getMyCarSeat()
         if seat then
-            -- Convert current velocity to local space relative to the car
-            local localVel = seat.CFrame:VectorToObjectSpace(seat.AssemblyLinearVelocity)
-            -- Force forward (Z) to boost speed, but keep turning (X) and gravity (Y)
-            local newLocalVel = Vector3.new(localVel.X, localVel.Y, State.Boost_Amt)
-            -- Convert back to world space and apply
-            seat.AssemblyLinearVelocity = seat.CFrame:VectorToWorldSpace(newLocalVel)
+            -- Use Camera LookVector projected on X/Z plane to avoid backward issues
+            local camLook = Vector3.new(Cam.CFrame.LookVector.X, 0, Cam.CFrame.LookVector.Z)
+            if camLook.Magnitude > 0 then camLook = camLook.Unit end
+            local currentVel = seat.AssemblyLinearVelocity
+            seat.AssemblyLinearVelocity = Vector3.new(camLook.X * State.Boost_Amt, currentVel.Y, camLook.Z * State.Boost_Amt)
         end
     end
 end))
@@ -323,19 +319,11 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
--- Vehicle Fly Loop
+-- Vehicle Fly Loop (Fixed: Uses AssemblyLinearVelocity for true flight)
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
         if seat then
-            local bv = seat:FindFirstChild("HubVehFlyBV")
-            if not bv then
-                bv = Instance.new("BodyVelocity")
-                bv.Name = "HubVehFlyBV"
-                bv.MaxForce = Vector3.new(99999, 99999, 99999)
-                bv.Velocity = Vector3.new(0,0,0)
-                bv.Parent = seat
-            end
             local d = Vector3.new(0, 0, 0)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
@@ -343,20 +331,16 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
+            
             if d.Magnitude > 0 then
-                bv.Velocity = d.Unit * State.Vehicle_Speed
+                seat.AssemblyLinearVelocity = d.Unit * State.Vehicle_Speed
             else
-                bv.Velocity = Vector3.new(0, 0, 0)
+                -- Freeze in air to prevent drifting
+                seat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end
         end
-    else
-        local seat = getMyCarSeat()
-        if seat then
-            local bv = seat:FindFirstChild("HubVehFlyBV")
-            if bv then bv:Destroy() end
-        end
     end
-end)
+end))
 
 -- Camera Unlock Loop
 RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 3, function()
@@ -400,31 +384,51 @@ TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Ca
 TabVehicle:CreateToggle({Name = "Re-Weld (Anti-Crush)", CurrentValue = false, Callback = function(v) State.ReWeld = v end})
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
-TabVehicle:CreateSection("Vehicle Mass")
+TabVehicle:CreateSection("Vehicle Mass (Gravity Manip)")
 TabVehicle:CreateButton({
-    Name = "Feather Mode (Extremely Light)",
+    Name = "Feather Mode (Floaty)",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
             local carModel = seat:FindFirstAncestorOfClass("Model")
+            local mass = 0
             for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then 
-                    p.CustomPhysicalProperties = PhysicalProperties.new(0.1, 0.5, 0.5) 
-                end
+                if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
             end
-            Rayfield:Notify({Title = "Mass", Content = "Car is now light!", Duration = 2})
+            local bf = seat:FindFirstChild("HubFeatherForce")
+            if not bf then
+                bf = Instance.new("BodyForce")
+                bf.Name = "HubFeatherForce"
+                bf.Parent = seat
+            end
+            -- Counteract 90% of gravity to make it floaty without breaking suspension
+            bf.Force = Vector3.new(0, mass * Workspace.Gravity * 0.9, 0)
+            local tankBf = seat:FindFirstChild("HubTankForce")
+            if tankBf then tankBf:Destroy() end
+            Rayfield:Notify({Title = "Mass", Content = "Car is now floaty!", Duration = 2})
         end
     end
 })
 TabVehicle:CreateButton({
-    Name = "Tank Mode (Extremely Heavy)",
+    Name = "Tank Mode (Heavy Downforce)",
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
             local carModel = seat:FindFirstAncestorOfClass("Model")
+            local mass = 0
             for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(50, 0.5, 0.5) end
+                if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
             end
+            local bf = seat:FindFirstChild("HubTankForce")
+            if not bf then
+                bf = Instance.new("BodyForce")
+                bf.Name = "HubTankForce"
+                bf.Parent = seat
+            end
+            -- Push down with 2x gravity
+            bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 2, 0)
+            local featherBf = seat:FindFirstChild("HubFeatherForce")
+            if featherBf then featherBf:Destroy() end
             Rayfield:Notify({Title = "Mass", Content = "Car is now heavy!", Duration = 2})
         end
     end
@@ -434,10 +438,10 @@ TabVehicle:CreateButton({
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
-            local carModel = seat:FindFirstAncestorOfClass("Model")
-            for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then p.CustomPhysicalProperties = nil end
-            end
+            local f1 = seat:FindFirstChild("HubFeatherForce")
+            local f2 = seat:FindFirstChild("HubTankForce")
+            if f1 then f1:Destroy() end
+            if f2 then f2:Destroy() end
             Rayfield:Notify({Title = "Mass", Content = "Vehicle mass reset.", Duration = 2})
         end
     end
