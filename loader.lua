@@ -27,7 +27,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
-State.Boost_CurrentSpeed = 0
+State.Boost_Speed = 600
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -151,9 +151,18 @@ local function activateNukeBypass()
     
     for _, desc in pairs(nuke:GetDescendants()) do
         if desc:IsA("ProximityPrompt") then
+            desc.Enabled = true
+            desc.MaxActivationDistance = 999
             fireproximityprompt(desc)
         elseif desc:IsA("ClickDetector") then
+            desc.MaxActivationDistance = 999
             fireclickdetector(desc)
+        elseif (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+            desc.Active = true
+            pcall(function() firesignal(desc.MouseButton1Down) end)
+            pcall(function() firesignal(desc.MouseButton1Click) end)
+            pcall(function() firesignal(desc.MouseButton1Up) end)
+            pcall(function() desc.Activated:Fire() end)
         end
     end
     Rayfield:Notify({Title = "Nuke", Content = "Attempting to activate Nuke...", Duration = 3})
@@ -222,6 +231,10 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                         obj.Frame.Visible = true
                         local legScreen = Cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
                         local height = math.abs(headScreen.Y - legScreen.Y)
+                        -- Infinite ESP: Set a minimum height so it doesn't disappear when far away
+                        if height < 15 then
+                            height = 15
+                        end
                         local width = height / 2
                         if State.ESP_Box then
                             obj.Box.Position = UDim2.fromOffset(headScreen.X - width/2, headScreen.Y)
@@ -287,7 +300,6 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
         if tick() > State.Boost_Cooldown then
             State.Boost_Active = true
-            State.Boost_CurrentSpeed = State.Boost_Speed
             State.Boost_EndTime = tick() + 1.5
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
@@ -320,16 +332,30 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
+    -- Rocket Booster (Fixed: Uses BodyVelocity for smooth physics)
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
-                local camLook = Vector3.new(Cam.CFrame.LookVector.X, 0, Cam.CFrame.LookVector.Z).Unit
-                local currentVel = seat.AssemblyLinearVelocity
-                seat.AssemblyLinearVelocity = Vector3.new(camLook.X * State.Boost_CurrentSpeed, currentVel.Y, camLook.Z * State.Boost_CurrentSpeed)
+                local bv = seat:FindFirstChild("HubBoostBV")
+                if not bv then
+                    bv = Instance.new("BodyVelocity")
+                    bv.Name = "HubBoostBV"
+                    bv.MaxForce = Vector3.new(99999, 99999, 99999)
+                    bv.Velocity = Vector3.new(0,0,0)
+                    bv.Parent = seat
+                end
+                local camLook = Vector3.new(Cam.CFrame.LookVector.X, 0, Cam.CFrame.LookVector.Z)
+                if camLook.Magnitude > 0 then camLook = camLook.Unit end
+                bv.Velocity = Vector3.new(camLook.X * State.Boost_Speed, seat.AssemblyLinearVelocity.Y, camLook.Z * State.Boost_Speed)
             end
         else
             State.Boost_Active = false
+            local seat = getMyCarSeat()
+            if seat then
+                local bv = seat:FindFirstChild("HubBoostBV")
+                if bv then bv:Destroy() end
+            end
         end
     end
 
@@ -348,7 +374,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
 end))
 
 table.insert(State.Connections, RunService.Stepped:Connect(function()
-    -- Vehicle Noclip (Fixed: Keeps floor collision)
     if State.Vehicle_Noclip then
         local seat = getMyCarSeat()
         if seat then
@@ -364,7 +389,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
         end
     end
 
-    -- Player Phase Walls (Nuke Room Bypass)
     if State.PhaseWalls and LP.Character then
         for _, part in pairs(LP.Character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -375,7 +399,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
         end
     end
 
-    -- Player Noclip
     if State.NoClip and LP.Character then
         for _, part in pairs(LP.Character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -411,8 +434,10 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
+            
+            -- Fixed: Changed to Space and LeftCtrl for up/down
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.new(0, 1, 0) end
             
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
@@ -420,7 +445,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0, 0, 0)
             end
             
-            -- Right-Click Steer: Face camera direction
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
                 local lookPos = seat.Position + Cam.CFrame.LookVector
                 bg.CFrame = CFrame.lookAt(seat.Position, lookPos)
@@ -504,50 +528,8 @@ TabVehicle:CreateButton({
         end
     end
 })
-TabVehicle:CreateButton({
-    Name = "Self Destruct (Instant Crush)",
-    Callback = function()
-        local seat = getMyCarSeat()
-        if seat then
-            local carModel = seat:FindFirstAncestorOfClass("Model")
-            if carModel then
-                for _, p in pairs(carModel:GetDescendants()) do
-                    if p:IsA("BasePart") then
-                        p:BreakJoints()
-                        if p.Name:lower():match("wheel") then
-                            p.Anchored = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-})
 
 TabVehicle:CreateSection("Gravity Manipulation")
-TabVehicle:CreateButton({
-    Name = "Moon Gravity (Floaty)",
-    Callback = function()
-        local seat = getMyCarSeat()
-        if seat then
-            local carModel = seat:FindFirstAncestorOfClass("Model")
-            local mass = 0
-            for _, p in pairs(carModel:GetDescendants()) do
-                if p:IsA("BasePart") then mass = mass + p.AssemblyMass end
-            end
-            local bf = seat:FindFirstChild("HubMoonForce")
-            if not bf then
-                bf = Instance.new("BodyForce")
-                bf.Name = "HubMoonForce"
-                bf.Parent = seat
-            end
-            bf.Force = Vector3.new(0, mass * Workspace.Gravity * 0.85, 0)
-            local crushBf = seat:FindFirstChild("HubCrushForce")
-            if crushBf then crushBf:Destroy() end
-            Rayfield:Notify({Title = "Gravity", Content = "Moon gravity activated!", Duration = 2})
-        end
-    end
-})
 TabVehicle:CreateButton({
     Name = "Crush Mode (Heavy Downforce)",
     Callback = function()
@@ -565,8 +547,6 @@ TabVehicle:CreateButton({
                 bf.Parent = seat
             end
             bf.Force = Vector3.new(0, -mass * Workspace.Gravity * 0.5, 0)
-            local moonBf = seat:FindFirstChild("HubMoonForce")
-            if moonBf then moonBf:Destroy() end
             Rayfield:Notify({Title = "Gravity", Content = "Crush mode activated!", Duration = 2})
         end
     end
@@ -576,9 +556,7 @@ TabVehicle:CreateButton({
     Callback = function()
         local seat = getMyCarSeat()
         if seat then
-            local f1 = seat:FindFirstChild("HubMoonForce")
             local f2 = seat:FindFirstChild("HubCrushForce")
-            if f1 then f1:Destroy() end
             if f2 then f2:Destroy() end
             Rayfield:Notify({Title = "Gravity", Content = "Gravity reset to normal.", Duration = 2})
         end
