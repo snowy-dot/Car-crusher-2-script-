@@ -8,17 +8,8 @@ local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 local Cam = Workspace.CurrentCamera
 
--- Load Linoria UI
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Source/main/linoria/Libraries/Library.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Source/main/linoria/Libraries/SaveManager.lua"))()
-local Options = Library:GetOptions()
-
-local Window = Library:CreateWindow({
-    Title = "Car Crushers 2 - Hub",
-    Footer = "Linoria Edition",
-    NotifySide = "Right",
-    ShowCustomCursor = true
-})
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+if not Rayfield then return end
 
 local State = {}
 State.ESP_Enabled = false
@@ -48,6 +39,7 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
+-- CC2 Specific States
 State.AntiGrav = false
 State.CustomFOV = false
 State.FOVValue = 70
@@ -55,9 +47,31 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
+-- Fling PvP States
 State.FlingPvP = false
 State.FlingRadius = 30
 State.FlingPower = 5000
+
+local CooldownGui = Instance.new("ScreenGui")
+CooldownGui.Name = "BoostCooldown"
+CooldownGui.ResetOnSpawn = false
+pcall(function() CooldownGui.Parent = gethui() end)
+if not CooldownGui.Parent then CooldownGui.Parent = LP:WaitForChild("PlayerGui") end
+
+local CooldownFrame = Instance.new("Frame", CooldownGui)
+CooldownFrame.Size = UDim2.new(0, 200, 0, 50)
+CooldownFrame.Position = UDim2.new(0.5, -100, 1, -100)
+CooldownFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+CooldownFrame.BackgroundTransparency = 0.5
+local ConerRadius = Instance.new("UICorner", CooldownFrame)
+local CooldownLabel = Instance.new("TextLabel", CooldownFrame)
+CooldownLabel.Size = UDim2.new(1, 0, 1, 0)
+CooldownLabel.BackgroundTransparency = 1
+CooldownLabel.Text = "Booster Ready"
+CooldownLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+CooldownLabel.Font = Enum.Font.GothamBold
+CooldownLabel.TextSize = 18
+CooldownFrame.Visible = false
 
 -- Fling Visual Barrier
 local FlingBarrier = Instance.new("Part")
@@ -65,7 +79,7 @@ FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 1
+FlingBarrier.Transparency = 1 -- Hidden initially
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
@@ -96,7 +110,14 @@ local function UnloadScript()
     
     Cam.FieldOfView = 70
     FlingBarrier:Destroy()
-    Library:Unload()
+    
+    local carModel = workspace:FindFirstChild("CarCollection") and workspace.CarCollection:FindFirstChild(LP.Name)
+    if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+        carModel.PrimaryPart.CC2_AntiGrav:Destroy()
+    end
+    
+    CooldownGui:Destroy()
+    Rayfield:Destroy()
 end
 
 local function getMyCarSeat()
@@ -508,7 +529,8 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             State.Boost_Active = true
             State.Boost_EndTime = tick() + 1.5
             State.Boost_Cooldown = tick() + 6.5
-            Library:Notify("Rocket Booster", "Activated!", 4)
+            CooldownFrame.Visible = true
+            Rayfield:Notify("Rocket Booster", "Activated!", 4)
         end
     end
 end))
@@ -561,6 +583,19 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if bv then bv:Destroy() end
             end
         end
+    end
+
+    if State.Q_Boost and State.Boost_Cooldown > tick() then
+        local timeLeft = math.ceil(State.Boost_Cooldown - tick())
+        CooldownLabel.Text = "Cooldown: " .. tostring(timeLeft) .. "s"
+        CooldownLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+        CooldownFrame.Visible = true
+    elseif State.Q_Boost then
+        CooldownLabel.Text = "Booster Ready (Press Q)"
+        CooldownLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        CooldownFrame.Visible = true
+    else
+        CooldownFrame.Visible = false
     end
 end))
 
@@ -662,8 +697,16 @@ RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 
 end)
 
 -- ============================================
--- LINORIA UI CREATION
+-- UI CREATION (Rayfield)
 -- ============================================
+local Window = Rayfield:CreateWindow({
+    Name = "Car Crushers 2 - Hub",
+    LoadingTitle = "Loading Hub...",
+    LoadingSubtitle = "Control & PvP Edition",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
 local TabFarm = Window:CreateTab("AutoFarm", 4483362458)
 local TabVehicle = Window:CreateTab("Vehicle", 4483362458)
 local TabPvP = Window:CreateTab("PvP / Fling", 4483362458)
@@ -674,12 +717,11 @@ local TabMisc = Window:CreateTab("Misc", 4483362458)
 -- ============================================
 -- AUTOFARM TAB
 -- ============================================
-local SectionFarm = TabFarm:CreateLeftGroupbox("AutoFarm")
-SectionFarm:CreateToggle({Name = "Auto-Crush (Teleport Inside Crusher)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
-SectionFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
-SectionFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback = function(v) State.AutoCash = v end})
-SectionFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
-SectionFarm:CreateButton({
+TabFarm:CreateToggle({Name = "Auto-Crush (Teleport Inside Crusher)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
+TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
+TabFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback = function(v) State.AutoCash = v end})
+TabFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
+TabFarm:CreateButton({
     Name = "Teleport to Nearest Crusher", 
     Callback = function()
         local seat = getMyCarSeat()
@@ -689,7 +731,7 @@ SectionFarm:CreateButton({
             if crusher and carModel then
                 local center = getCrusherCenter(crusher)
                 carModel:PivotTo(CFrame.new(center + Vector3.new(0, 5, 0)))
-                Library:Notify("Teleport", "Teleported to " .. crusher.Name, 3)
+                Rayfield:Notify("Teleport", "Teleported to " .. crusher.Name, 3)
             end
         end
     end
@@ -698,46 +740,59 @@ SectionFarm:CreateButton({
 -- ============================================
 -- VEHICLE TAB
 -- ============================================
-local SectionMods = TabVehicle:CreateLeftGroupbox("Car Crushers 2 Mods")
-local SectionFly = TabVehicle:CreateRightGroupbox("Flight & Camera")
-local SectionPhysics = TabVehicle:CreateLeftGroupbox("Physics & Speed")
+TabVehicle:CreateSection("Car Crushers 2 Mods")
 
-SectionMods:CreateToggle({Name = "Auto Max Car Stats (Permanent)", CurrentValue = false, Callback = function(v) State.AutoMaxStats = v; if v then applyMaxStats() end end})
-SectionMods:CreateButton({Name = "Max Stats (One Time)", Callback = function() applyMaxStats() end})
-SectionMods:CreateToggle({
-    Name = "Drift Mode (Extreme)", 
-    CurrentValue = false, 
-    Callback = function(v)
-        State.DriftMode = v
-        if v then applyDriftMode() else applyMaxStats() end
-    end
-})
-SectionMods:CreateToggle({
-    Name = "Anti-Gravity Car (Float)", 
-    CurrentValue = false, 
-    Callback = function(Value)
-        State.AntiGrav = Value
-        if not Value then
-            local carModel = getMyCarModel()
-            if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
-                carModel.PrimaryPart.CC2_AntiGrav:Destroy()
-            end
-        end
-    end
+TabVehicle:CreateToggle({
+   Name = "Auto Max Car Stats (Permanent)",
+   CurrentValue = false,
+   Callback = function(v)
+       State.AutoMaxStats = v
+       if v then applyMaxStats() end
+   end
 })
 
-SectionFly:CreateToggle({Name = "Vehicle Fly (W/S/Camera)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
-SectionFly:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, Suffix = "Studs", CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
-SectionFly:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
+TabVehicle:CreateButton({
+   Name = "Max Stats (One Time)",
+   Callback = function() applyMaxStats() end
+})
 
-SectionPhysics:CreateToggle({Name = "Rocket Booster (Press Q) - Fixed", CurrentValue = false, Callback = function(v) State.Q_Boost = v end})
-SectionPhysics:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, Suffix = "Speed", CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
-SectionPhysics:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
-SectionPhysics:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
-SectionPhysics:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
+TabVehicle:CreateToggle({
+   Name = "Drift Mode (Extreme)",
+   CurrentValue = false,
+   Callback = function(v)
+       State.DriftMode = v
+       if v then applyDriftMode() else applyMaxStats() end
+   end
+})
 
-local SectionActions = TabVehicle:CreateRightGroupbox("Actions")
-SectionActions:CreateButton({
+TabVehicle:CreateToggle({
+   Name = "Anti-Gravity Car (Float)",
+   CurrentValue = false,
+   Callback = function(Value)
+       State.AntiGrav = Value
+       if not Value then
+           local carModel = getMyCarModel()
+           if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+               carModel.PrimaryPart.CC2_AntiGrav:Destroy()
+           end
+       end
+   end
+})
+
+TabVehicle:CreateSection("Flight & Camera")
+TabVehicle:CreateToggle({Name = "Vehicle Fly (W/S/Camera)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
+TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
+TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
+
+TabVehicle:CreateSection("Physics & Speed")
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Fixed", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
+TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
+TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
+TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
+
+TabVehicle:CreateSection("Actions")
+TabVehicle:CreateButton({
     Name = "Flip Car Upright",
     Callback = function()
         local carModel = getMyCarModel()
@@ -747,7 +802,7 @@ SectionActions:CreateButton({
         end
     end
 })
-SectionActions:CreateButton({
+TabVehicle:CreateButton({
     Name = "Super Brakes (Instant Stop)",
     Callback = function()
         local seat = getMyCarSeat()
@@ -761,8 +816,8 @@ SectionActions:CreateButton({
 -- ============================================
 -- PVP / FLING TAB (Fixed: Targets everyone, barrier follows you)
 -- ============================================
-local SectionFling = TabPvP:CreateLeftGroupbox("Fling Aura System")
-SectionFling:CreateToggle({
+TabPvP:CreateSection("Fling Aura System")
+TabPvP:CreateToggle({
     Name = "Enable Fling Aura",
     CurrentValue = false,
     Callback = function(v)
@@ -770,22 +825,20 @@ SectionFling:CreateToggle({
         FlingBarrier.Transparency = v and 0.8 or 1
     end
 })
-SectionFling:CreateSlider({
+TabPvP:CreateSlider({
     Name = "Fling Radius",
     Range = {10, 100},
     Increment = 1,
-    Suffix = "Studs",
     CurrentValue = 30,
     Callback = function(v)
         State.FlingRadius = v
         FlingBarrier.Size = Vector3.new(v * 2, v * 2, v * 2)
     end
 })
-SectionFling:CreateSlider({
+TabPvP:CreateSlider({
     Name = "Fling Power",
     Range = {1000, 20000},
     Increment = 500,
-    Suffix = "Force",
     CurrentValue = 5000,
     Callback = function(v) State.FlingPower = v end
 })
@@ -793,8 +846,7 @@ SectionFling:CreateSlider({
 -- ============================================
 -- LOCAL TAB
 -- ============================================
-local SectionLocal = TabLocal:CreateLeftGroupbox("Player Mods")
-SectionLocal:CreateToggle({
+TabLocal:CreateToggle({
     Name = "Enable Fly (Player)",
     CurrentValue = false,
     Callback = function(v)
@@ -824,9 +876,9 @@ SectionLocal:CreateToggle({
         end
     end
 })
-SectionLocal:CreateSlider({Name = "Player Fly Speed", Range = {10, 500}, Increment = 1, Suffix = "Studs", CurrentValue = 50, Callback = function(v) State.Fly_Speed = v end})
-SectionLocal:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Callback = function(v) State.InfJump = v end})
-SectionLocal:CreateToggle({Name = "Player Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
+TabLocal:CreateSlider({Name = "Player Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) State.Fly_Speed = v end})
+TabLocal:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Callback = function(v) State.InfJump = v end})
+TabLocal:CreateToggle({Name = "Player Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
 
 table.insert(State.Connections, UserInputService.JumpRequest:Connect(function()
     if State.InfJump and LP.Character then
@@ -838,13 +890,12 @@ end))
 -- ============================================
 -- VISUALS TAB
 -- ============================================
-local SectionESP = TabESP:CreateLeftGroupbox("Player ESP")
-SectionESP:CreateToggle({Name = "Enable Player ESP", CurrentValue = false, Callback = function(v) State.ESP_Enabled = v end})
-SectionESP:CreateToggle({Name = "Boxes", CurrentValue = true, Callback = function(v) State.ESP_Box = v end})
-SectionESP:CreateToggle({Name = "Names", CurrentValue = true, Callback = function(v) State.ESP_Name = v end})
+TabESP:CreateToggle({Name = "Enable Player ESP", CurrentValue = false, Callback = function(v) State.ESP_Enabled = v end})
+TabESP:CreateToggle({Name = "Boxes", CurrentValue = true, Callback = function(v) State.ESP_Box = v end})
+TabESP:CreateToggle({Name = "Names", CurrentValue = true, Callback = function(v) State.ESP_Name = v end})
 
-local SectionCrusherESP = TabESP:CreateLeftGroupbox("Crusher ESP")
-SectionCrusherESP:CreateToggle({
+TabESP:CreateSection("Crusher ESP")
+TabESP:CreateToggle({
     Name = "Show Crusher Locations",
     CurrentValue = false,
     Callback = function(v)
@@ -859,8 +910,8 @@ SectionCrusherESP:CreateToggle({
     end
 })
 
-local SectionLight = TabESP:CreateRightGroupbox("Lighting & Camera")
-SectionLight:CreateToggle({
+TabESP:CreateSection("Lighting & Camera")
+TabESP:CreateToggle({
     Name = "Fullbright",
     CurrentValue = false,
     Callback = function(v)
@@ -871,7 +922,7 @@ SectionLight:CreateToggle({
         end
     end
 })
-SectionLight:CreateToggle({
+TabESP:CreateToggle({
     Name = "Enable Custom FOV (Override Game)",
     CurrentValue = false,
     Callback = function(v)
@@ -879,14 +930,13 @@ SectionLight:CreateToggle({
         if not v then Cam.FieldOfView = 70 end
     end
 })
-SectionLight:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, Suffix = "FOV", CurrentValue = 70, Callback = function(v) State.FOVValue = v end})
-SectionLight:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
-SectionLight:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
+TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, CurrentValue = 70, Callback = function(v) State.FOVValue = v end})
+TabESP:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
+TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
 
 -- ============================================
 -- MISC TAB
 -- ============================================
-local SectionMisc = TabMisc:CreateLeftGroupbox("Settings")
-SectionMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
+TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Library:Notify("Car Crushers 2", "Hub loaded! Check PvP/Fling tab!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Check PvP/Fling tab!", 5)
