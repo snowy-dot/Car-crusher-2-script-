@@ -38,6 +38,11 @@ State.PickupCar = false
 State.ReWeld = false
 State.Connections = {}
 
+-- New CC2 Specific States
+State.AntiGrav = false
+State.CustomFOV = false
+State.FOVValue = 70
+
 local CooldownGui = Instance.new("ScreenGui")
 CooldownGui.Name = "BoostCooldown"
 CooldownGui.ResetOnSpawn = false
@@ -68,11 +73,20 @@ local function UnloadScript()
     pcall(function() RunService:UnbindFromRenderStep("FlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("VehicleFlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("CamUnlockLoop") end)
+    pcall(function() RunService:UnbindFromRenderStep("CC2_FOVLoop") end)
+    
     for _, obj in pairs(State.ESP_Objects) do
         if obj.Frame then obj.Frame:Destroy() end
     end
     State.ESP_Objects = {}
     Cam.FieldOfView = 70
+    
+    -- Clean up Anti-Grav
+    local carModel = workspace.CarCollection:FindFirstChild(LP.Name)
+    if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+        carModel.PrimaryPart.CC2_AntiGrav:Destroy()
+    end
+    
     CooldownGui:Destroy()
     Rayfield:Destroy()
 end
@@ -112,9 +126,9 @@ local function doAutoFarm()
         local pad = getClosestCrusherPad()
         if pad then
             local targetCFrame = CFrame.new(pad.Position + Vector3.new(0, 5, 0))
-            seat.CFrame = targetCFrame
             local carModel = seat:FindFirstAncestorOfClass("Model")
-            if carModel and carModel.PrimaryPart then
+            if carModel then
+                -- Bug Fix: Only use PivotTo to avoid breaking car constraints
                 carModel:PivotTo(targetCFrame)
             end
         end
@@ -165,7 +179,6 @@ local function activateNukeBypass()
             pcall(function() desc.Activated:Fire() end)
         end
     end
-    -- Deep search for SurfaceGui/BillboardGui buttons
     for _, desc in pairs(nuke:GetDescendants()) do
         if desc:IsA("SurfaceGui") or desc:IsA("BillboardGui") then
             for _, btn in pairs(desc:GetDescendants()) do
@@ -245,9 +258,7 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                         obj.Frame.Visible = true
                         local legScreen = Cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
                         local height = math.abs(headScreen.Y - legScreen.Y)
-                        if height < 15 then
-                            height = 15
-                        end
+                        if height < 15 then height = 15 end
                         local width = height / 2
                         if State.ESP_Box then
                             obj.Box.Position = UDim2.fromOffset(headScreen.X - width/2, headScreen.Y)
@@ -270,6 +281,15 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                     obj.Frame.Visible = false 
                 end
             end
+        end
+    end
+end)
+
+-- CC2 Custom FOV Override Loop
+RunService:BindToRenderStep("CC2_FOVLoop", Enum.RenderPriority.Camera.Value + 4, function()
+    if State.CustomFOV then
+        if Cam.FieldOfView ~= State.FOVValue then
+            Cam.FieldOfView = State.FOVValue
         end
     end
 end)
@@ -303,6 +323,29 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                         p.Enabled = true
                     end
                 end
+            end
+        end
+    end
+    
+    -- CC2 Anti-Gravity Logic
+    if State.AntiGrav then
+        local seat = getMyCarSeat()
+        if seat then
+            local carModel = seat:FindFirstAncestorOfClass("Model")
+            if carModel and carModel.PrimaryPart then
+                local mass = carModel.PrimaryPart.AssemblyMass
+                local forceVector = Vector3.new(0, workspace.Gravity * mass * 0.5, 0)
+                
+                if not carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+                    local att = Instance.new("Attachment", carModel.PrimaryPart)
+                    att.Name = "CC2_AntiGrav"
+                    local vf = Instance.new("VectorForce", carModel.PrimaryPart)
+                    vf.Name = "CC2_AntiGrav"
+                    vf.Attachment0 = att
+                    vf.RelativeTo = Enum.ActuatorRelativeTo.World
+                end
+                
+                carModel.PrimaryPart.CC2_AntiGrav.VectorForce.Force = forceVector
             end
         end
     end
@@ -401,7 +444,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
         end
     end
 
-    -- Phase Walls: Added CanTouch = false to stop teleporters
     if State.PhaseWalls and LP.Character then
         for _, part in pairs(LP.Character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -483,7 +525,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Stabilizer Edition",
+    LoadingSubtitle = "Decompiled Code Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -500,6 +542,52 @@ TabFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback
 TabFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
 TabFarm:CreateButton({Name = "Bypass Nuke Room (Activate)", Callback = function() activateNukeBypass() end})
 
+-- CC2 Car Stats Button
+TabVehicle:CreateSection("Car Crushers 2 Mods")
+TabVehicle:CreateButton({
+   Name = "Max Out Current Car Stats",
+   Callback = function()
+       local carCollection = workspace:FindFirstChild("CarCollection")
+       if not carCollection then return Rayfield:Notify({Title = "Error", Content = "CarCollection not found."}) end
+       
+       local carModel = carCollection:FindFirstChild(LP.Name)
+       if not carModel then return Rayfield:Notify({Title = "Error", Content = "You must spawn a car first!"}) end
+       
+       local configModule = carModel:FindFirstChild("Car") and carModel.Car:FindFirstChild("Body") and carModel.Car.Body:FindFirstChild("Configuration")
+       
+       if configModule then
+           local success, config = pcall(require, configModule)
+           if success and type(config) == "table" then
+               config.TopSpeed = 500
+               config.Acceleration = 100
+               config.Horsepower = 1000
+               config.Handling = 5.0
+               config.BrakeForce = 50000
+               config.DriftSlide = 2.0
+               Rayfield:Notify({Title = "Success!", Content = "Car stats maxed out in memory!"})
+           end
+       else
+           Rayfield:Notify({Title = "Error", Content = "Configuration module not found for this car."})
+       end
+   end
+})
+
+-- CC2 Anti-Gravity Toggle
+TabVehicle:CreateToggle({
+   Name = "Anti-Gravity Car (Float)",
+   CurrentValue = false,
+   Callback = function(Value)
+       State.AntiGrav = Value
+       if not Value then
+           local carModel = workspace.CarCollection:FindFirstChild(LP.Name)
+           if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+               carModel.PrimaryPart.CC2_AntiGrav:Destroy()
+           end
+       end
+   end
+})
+
+TabVehicle:CreateSection("Flight & Camera")
 TabVehicle:CreateToggle({Name = "Vehicle Fly (Right-Click to Steer)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
@@ -635,19 +723,40 @@ TabESP:CreateToggle({
         end
     end
 })
-TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, CurrentValue = 70, Callback = function(v) Cam.FieldOfView = v end})
+
+-- CC2 FOV Override Toggle
+TabESP:CreateToggle({
+    Name = "Enable Custom FOV (Override Game)",
+    CurrentValue = false,
+    Callback = function(v)
+        State.CustomFOV = v
+        if not v then
+            Cam.FieldOfView = 70 -- Reset to default
+        end
+    end
+})
+TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, CurrentValue = 70, Callback = function(v) State.FOVValue = v end})
+
 TabESP:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
 TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
 
+-- Fixed Clear Debris Button
 TabMisc:CreateButton({
     Name = "Clear Local Debris (Boost FPS)",
     Callback = function()
+        local count = 0
         for _, obj in pairs(Workspace:GetChildren()) do
-            if obj:IsA("Model") and not obj:FindFirstChild("Configuration") and not obj:FindFirstChild("Humanoid") and obj.Name ~= "CarCollection" then
+            -- Bug Fix: Only delete unanchored, small parts (debris) to prevent deleting the map
+            if obj:IsA("BasePart") and not obj.Anchored and obj.Size.Magnitude < 10 then
                 pcall(function() obj:Destroy() end)
+                count = count + 1
+            elseif obj:IsA("Model") and not obj.PrimaryPart then
+                -- Delete models that have no PrimaryPart (usually broken debris)
+                pcall(function() obj:Destroy() end)
+                count = count + 1
             end
         end
-        Rayfield:Notify({Title = "Cleanup", Content = "Local debris cleared.", Duration = 2})
+        Rayfield:Notify({Title = "Cleanup", Content = "Cleared " .. count .. " debris parts.", Duration = 2})
     end
 })
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
