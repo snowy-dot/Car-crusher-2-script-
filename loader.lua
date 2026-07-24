@@ -524,7 +524,7 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             State.Boost_EndTime = tick() + 2.0
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "Balanced Force Engaged!", 4)
+            Rayfield:Notify("Rocket Booster", "Reinforced Stability Engaged!", 4)
         end
     end
 end))
@@ -540,25 +540,29 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Balanced Push Force + Full Steering)
+-- ROCKET BOOSTER (Reinforced Stability + Grip Enhancement)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
+                local carModel = seat:FindFirstAncestorOfClass("Model")
+                local mass = seat.AssemblyMass
+                
+                -- 1. Balanced Velocity Force (Pushes car smoothly)
                 local bv = seat:FindFirstChild("HubBoostBV")
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    bv.MaxForce = Vector3.new(500000, 0, 500000)
-                    -- FIX: Lowered P (Power) to 2000. This creates a balanced push force 
-                    -- instead of an instant snap, allowing tires to grip and steer perfectly.
-                    bv.P = 2000 
+                    -- FIX: Lowered MaxForce and P to prevent breaking tire friction
+                    bv.MaxForce = Vector3.new(50000, 0, 50000)
+                    bv.P = 1000 
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
+                -- 2. Stabilizer (Anti-Flip, allows steering)
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
@@ -567,6 +571,27 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                     bg.D = 1000 
                     bg.P = 2000
                     bg.Parent = seat
+                end
+                
+                -- 3. Reinforce Stability: Downforce (Pushes car down for massive tire grip)
+                local df = seat:FindFirstChild("HubDownforce")
+                if not df then
+                    df = Instance.new("BodyForce")
+                    df.Name = "HubDownforce"
+                    df.Parent = seat
+                end
+                -- Pushes down with 1.5x the car's weight to simulate F1 aerodynamics
+                df.Force = Vector3.new(0, -mass * workspace.Gravity * 1.5, 0)
+                
+                -- 4. Reinforce Stability: Tire Grip Enhancer
+                if carModel then
+                    for _, part in pairs(carModel:GetDescendants()) do
+                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
+                            pcall(function()
+                                part.CustomPhysicalProperties = PhysicalProperties.new(3, 0.5, 0.5) -- 3.0 Friction = Extremely Grippy
+                            end)
+                        end
+                    end
                 end
                 
                 local carLook = seat.CFrame.LookVector
@@ -588,8 +613,22 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
                 local bg = seat:FindFirstChild("HubBoostBG")
+                local df = seat:FindFirstChild("HubDownforce")
                 if bv then bv:Destroy() end
                 if bg then bg:Destroy() end
+                if df then df:Destroy() end
+                
+                -- Restore Tire Grip to normal
+                local carModel = seat:FindFirstAncestorOfClass("Model")
+                if carModel then
+                    for _, part in pairs(carModel:GetDescendants()) do
+                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
+                            pcall(function()
+                                part.CustomPhysicalProperties = nil -- Reverts to default Roblox friction
+                            end)
+                        end
+                    end
+                end
             end
         end
     end
@@ -717,7 +756,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Balanced Force Edition",
+    LoadingSubtitle = "Reinforced Stability Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -800,7 +839,7 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Reinforced Grip", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
 TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {500, 15000}, Increment = 100, CurrentValue = 2000, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
@@ -954,4 +993,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Balanced Force Engaged!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Reinforced Stability Engaged!", 5)
