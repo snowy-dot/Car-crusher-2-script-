@@ -141,7 +141,7 @@ local function getMyCarModel()
 end
 
 -- ============================================
--- CRUSHER DETECTION (From decompiled CrusherSignals)
+-- CRUSHER DETECTION 
 -- ============================================
 local function getAllCrushers()
     local crushers = Workspace:FindFirstChild("Crushers")
@@ -254,7 +254,7 @@ local function findAndClickRespawn()
 end
 
 -- ============================================
--- CAR STATS (Fixed: Balanced handling + Drift Reset)
+-- CAR STATS (Fixed: Balanced, no suspension touching)
 -- ============================================
 local function applyMaxStats()
     local carCollection = workspace:FindFirstChild("CarCollection")
@@ -270,16 +270,13 @@ local function applyMaxStats()
     if configModule then
         local success, config = pcall(require, configModule)
         if success and type(config) == "table" then
-            -- FIX 3: Balanced stats so front wheels aren't too hard to control
-            config.TopSpeed = 350
-            config.Acceleration = 50
-            config.Horsepower = 800
-            config.Handling = 3.5
-            config.BrakeForce = 30000
+            -- FIX 2: ONLY touch speed/handling, DO NOT touch suspension to keep wheels stable
+            config.TopSpeed = 400
+            config.Acceleration = 80
+            config.Horsepower = 1000
+            config.Handling = 2.5
+            config.BrakeForce = 25000
             config.DriftSlide = 1.5
-            config.SusStiffness = 2.0
-            config.SusDamping = 4000
-            config.SteerAngle = 35
         end
     end
 end
@@ -301,7 +298,7 @@ local function applyDriftMode()
             config.DriftSlide = 5.0
             config.RearGripHandbrake = 5.0
             config.RearGripDrift = 5.0
-            config.Handling = 3.0
+            config.Handling = 2.0
         end
     end
 end
@@ -506,7 +503,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (New)
+    -- FLING PVP SYSTEM
     -- ============================================
     if State.FlingPvP then
         local myCar = getMyCarModel()
@@ -581,7 +578,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: Steer with car wheels, no mouse follow)
+-- ROCKET BOOSTER (Fixed: Pure Car Steering, NO Mouse)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -597,23 +594,13 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                     bv.Parent = seat
                 end
                 
-                -- FIX 1: BodyGyro that ONLY stabilizes Pitch and Roll (NO YAW), allowing steering
-                local bg = seat:FindFirstChild("HubBoostBG")
-                if not bg then
-                    bg = Instance.new("BodyGyro")
-                    bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(40000, 0, 40000) -- 0 Yaw torque = free steering
-                    bg.D = 100
-                    bg.Parent = seat
-                end
+                -- FIX 1: Completely removed BodyGyro. It now ONLY pushes in the direction the car is facing.
+                -- This gives 100% control to the car's literal front tires/steering.
                 
                 -- Get the car's actual facing direction (horizontal only)
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
-                
-                -- Lock pitch/roll to prevent flipping, but let Yaw steer
-                bg.CFrame = CFrame.lookAt(seat.Position, seat.Position + flatLook)
                 
                 -- Apply velocity in the direction the car is pointing
                 bv.Velocity = Vector3.new(
@@ -627,9 +614,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             local seat = getMyCarSeat()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
-                local bg = seat:FindFirstChild("HubBoostBG")
                 if bv then bv:Destroy() end
-                if bg then bg:Destroy() end
             end
         end
     end
@@ -745,14 +730,14 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "PvP & Control Edition",
+    LoadingSubtitle = "Control & PvP Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
 local TabFarm = Window:CreateTab("AutoFarm", 4483362458)
 local TabVehicle = Window:CreateTab("Vehicle", 4483362458)
-local TabPvP = Window:CreateTab("PvP", 4483362458)
+local TabPvP = Window:CreateTab("PvP / Fling", 4483362458)
 local TabLocal = Window:CreateTab("Local", 4483362458)
 local TabESP = Window:CreateTab("Visuals", 4483362458)
 local TabMisc = Window:CreateTab("Misc", 4483362458)
@@ -799,7 +784,6 @@ TabVehicle:CreateButton({
    Callback = function() applyMaxStats() end
 })
 
--- FIX 2: Drift Mode Toggle properly resets
 TabVehicle:CreateToggle({
    Name = "Drift Mode (Extreme)",
    CurrentValue = false,
@@ -808,7 +792,7 @@ TabVehicle:CreateToggle({
        if v then
            applyDriftMode()
        else
-           applyMaxStats() -- Reset to normal max stats
+           applyMaxStats() -- Reset to normal
        end
    end
 })
@@ -862,9 +846,9 @@ TabVehicle:CreateButton({
 })
 
 -- ============================================
--- PVP TAB (New)
+-- PVP / FLING TAB (Fix 3: Clearly labeled and populated)
 -- ============================================
-TabPvP:CreateSection("Fling System")
+TabPvP:CreateSection("Fling Aura System")
 TabPvP:CreateToggle({
     Name = "Enable Fling Aura",
     CurrentValue = false,
@@ -999,4 +983,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Check the new PvP tab!", Duration = 5})
+Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Check PvP/Fling tab!", Duration = 5})
