@@ -39,7 +39,6 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
--- CC2 Specific States
 State.AntiGrav = false
 State.CustomFOV = false
 State.FOVValue = 70
@@ -47,7 +46,6 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
--- Fling PvP States
 State.FlingPvP = false
 State.FlingRadius = 30
 State.FlingPower = 5000
@@ -79,7 +77,7 @@ FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 1 -- Hidden initially
+FlingBarrier.Transparency = 1
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
@@ -458,7 +456,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (Fixed: Targets everyone, follows avatar/car)
+    -- FLING PVP SYSTEM 
     -- ============================================
     if State.FlingPvP then
         local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -526,7 +524,7 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             State.Boost_EndTime = tick() + 1.5
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "Steroids Steering Engaged!", 4)
+            Rayfield:Notify("Rocket Booster", "Vehicle Immunity Engaged!", 4)
         end
     end
 end))
@@ -542,13 +540,14 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Balanced Push + Steroids Steering + Grip)
+-- ROCKET BOOSTER (Balanced Push + Vehicle Immunity Enhancer)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
+                local carModel = seat:FindFirstAncestorOfClass("Model")
                 local mass = seat.AssemblyMass
                 
                 -- 1. Balanced Push Force (The one you liked)
@@ -561,50 +560,44 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                     bv.Parent = seat
                 end
                 
-                -- 2. Pitch/Roll Stabilizer (Prevents flipping, allows Yaw for steering)
+                -- 2. Mild Stabilizer (Locks Pitch/Roll to prevent flipping, leaves Yaw free for natural steering)
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(40000, 0, 40000) 
+                    bg.MaxTorque = Vector3.new(40000, 0, 40000) -- 0 on Y axis means steering is 100% natural
                     bg.D = 1000 
                     bg.P = 2000
                     bg.Parent = seat
                 end
                 
-                -- 3. STEROIDS STEERING: Violent Angular Velocity for snapping turns
-                local bav = seat:FindFirstChild("HubBoostBAV")
-                if not bav then
-                    bav = Instance.new("BodyAngularVelocity")
-                    bav.Name = "HubBoostBAV"
-                    bav.MaxTorque = Vector3.new(0, 500000, 0) -- Infinite Yaw torque
-                    bav.AngularVelocity = Vector3.new(0, 0, 0)
-                    bav.Parent = seat
-                end
-                
-                -- 4. REINFORCED GRIP: Downforce to stick tires to the road
+                -- 3. Downforce (Pushes car down for massive tire grip)
                 local df = seat:FindFirstChild("HubDownforce")
                 if not df then
                     df = Instance.new("BodyForce")
                     df.Name = "HubDownforce"
                     df.Parent = seat
                 end
-                -- Pushes down with 2x the car's weight for massive grip
-                df.Force = Vector3.new(0, -mass * workspace.Gravity * 2.0, 0)
+                -- Pushes down with 1.5x the car's weight
+                df.Force = Vector3.new(0, -mass * workspace.Gravity * 1.5, 0)
                 
-                -- Steroids Steering Logic
-                local steerInput = 0
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then steerInput = steerInput - 1 end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then steerInput = steerInput + 1 end
+                -- 4. Vehicle Immunity: Enhance Tires (Only apply once per boost)
+                if carModel and not carModel:GetAttribute("BoostImmunityActive") then
+                    carModel:SetAttribute("BoostImmunityActive", true)
+                    for _, part in pairs(carModel:GetDescendants()) do
+                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
+                            pcall(function()
+                                part.CustomPhysicalProperties = PhysicalProperties.new(5.0, 1.0, 1.0) -- 5.0 Friction = Glued to road
+                            end)
+                        end
+                    end
+                end
                 
-                -- 6 radians/sec is extremely fast, violent turning
-                bav.AngularVelocity = Vector3.new(0, steerInput * 6, 0) 
-                
-                -- Keep car perfectly flat
+                -- Keep car perfectly flat, but let the game steer it
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
                 
-                -- Update facing direction based on the new violent rotation
+                -- Apply velocity in the direction the car is pointing
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
@@ -621,12 +614,23 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
                 local bg = seat:FindFirstChild("HubBoostBG")
-                local bav = seat:FindFirstChild("HubBoostBAV")
                 local df = seat:FindFirstChild("HubDownforce")
                 if bv then bv:Destroy() end
                 if bg then bg:Destroy() end
-                if bav then bav:Destroy() end
                 if df then df:Destroy() end
+                
+                -- Revert Vehicle Immunity: Restore Tires to normal
+                local carModel = seat:FindFirstAncestorOfClass("Model")
+                if carModel and carModel:GetAttribute("BoostImmunityActive") then
+                    carModel:SetAttribute("BoostImmunityActive", nil)
+                    for _, part in pairs(carModel:GetDescendants()) do
+                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
+                            pcall(function()
+                                part.CustomPhysicalProperties = nil -- Reverts to default Roblox friction
+                            end)
+                        end
+                    end
+                end
             end
         end
     end
@@ -678,7 +682,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Fixed: Comfortable Up/Down controls)
+-- VEHICLE FLY (Comfortable Up/Down controls)
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -746,7 +750,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Steroids Steering Edition",
+    LoadingSubtitle = "Vehicle Immunity Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -829,7 +833,7 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Steroids Steering", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Immune Steering", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
 TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
@@ -983,4 +987,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Steroids Steering added!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Vehicle Immunity added!", 5)
