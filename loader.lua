@@ -73,19 +73,18 @@ CooldownLabel.Font = Enum.Font.GothamBold
 CooldownLabel.TextSize = 18
 CooldownFrame.Visible = false
 
--- Fling Visual Barrier
+-- Fling Visual Barrier (FIXED: Use Transparency instead of Visible)
 local FlingBarrier = Instance.new("Part")
 FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 0.8
+FlingBarrier.Transparency = 1 -- Hidden initially
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
 FlingBarrier.CanTouch = false
 FlingBarrier.Size = Vector3.new(State.FlingRadius * 2, State.FlingRadius * 2, State.FlingRadius * 2)
-FlingBarrier.Visible = false
 FlingBarrier.Parent = Workspace
 
 local function UnloadScript()
@@ -854,7 +853,7 @@ TabPvP:CreateToggle({
     CurrentValue = false,
     Callback = function(v)
         State.FlingPvP = v
-        FlingBarrier.Visible = v
+        FlingBarrier.Transparency = v and 0.8 or 1 -- Fix: Use transparency instead of Visible
     end
 })
 TabPvP:CreateSlider({
