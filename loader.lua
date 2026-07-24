@@ -47,6 +47,11 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
+-- Fling PvP States
+State.FlingPvP = false
+State.FlingRadius = 30
+State.FlingPower = 5000
+
 local CooldownGui = Instance.new("ScreenGui")
 CooldownGui.Name = "BoostCooldown"
 CooldownGui.ResetOnSpawn = false
@@ -67,6 +72,21 @@ CooldownLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 CooldownLabel.Font = Enum.Font.GothamBold
 CooldownLabel.TextSize = 18
 CooldownFrame.Visible = false
+
+-- Fling Visual Barrier
+local FlingBarrier = Instance.new("Part")
+FlingBarrier.Name = "FlingBarrierVisual"
+FlingBarrier.Shape = Enum.PartType.Ball
+FlingBarrier.Material = Enum.Material.ForceField
+FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
+FlingBarrier.Transparency = 0.8
+FlingBarrier.Anchored = true
+FlingBarrier.CanCollide = false
+FlingBarrier.CanQuery = false
+FlingBarrier.CanTouch = false
+FlingBarrier.Size = Vector3.new(State.FlingRadius * 2, State.FlingRadius * 2, State.FlingRadius * 2)
+FlingBarrier.Visible = false
+FlingBarrier.Parent = Workspace
 
 local function UnloadScript()
     for _, conn in ipairs(State.Connections) do
@@ -91,6 +111,7 @@ local function UnloadScript()
     State.CrusherESP_Objects = {}
     
     Cam.FieldOfView = 70
+    FlingBarrier:Destroy()
     
     local carModel = workspace:FindFirstChild("CarCollection") and workspace.CarCollection:FindFirstChild(LP.Name)
     if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
@@ -136,10 +157,8 @@ local function getAllCrushers()
 end
 
 local function getCrusherCenter(crusher)
-    -- Try to find specific trigger parts from decompiled code
     local scripted = crusher:FindFirstChild("Scripted")
     if scripted then
-        -- From CrusherSignals: Sensor, Bottom, Spikes are trigger parts
         local sensor = scripted:FindFirstChild("Sensor")
         if sensor then return sensor.Position, sensor end
         
@@ -150,7 +169,6 @@ local function getCrusherCenter(crusher)
         if bottomPart and bottomPart:IsA("BasePart") then return bottomPart.Position, bottomPart end
     end
     
-    -- Fallback: find the largest part in the crusher (likely the crush zone)
     local largestPart = nil
     local largestSize = 0
     for _, part in pairs(crusher:GetDescendants()) do
@@ -164,7 +182,6 @@ local function getCrusherCenter(crusher)
     end
     
     if largestPart then return largestPart.Position, largestPart end
-    
     return crusher:GetPivot().Position, nil
 end
 
@@ -193,7 +210,7 @@ local function getClosestCrusher()
 end
 
 -- ============================================
--- AUTO CRUSH (Fixed: Teleport inside crusher)
+-- AUTO CRUSH 
 -- ============================================
 local function doAutoCrush()
     local seat = getMyCarSeat()
@@ -208,7 +225,6 @@ local function doAutoCrush()
     local center, part = getCrusherCenter(crusher)
     if not center then return end
     
-    -- Teleport car INSIDE the crusher (slightly above center to fall into it)
     local targetPos = center + Vector3.new(0, 5, 0)
     carModel:PivotTo(CFrame.new(targetPos))
 end
@@ -238,7 +254,7 @@ local function findAndClickRespawn()
 end
 
 -- ============================================
--- AUTO MAX STATS (Fixed: Re-applies every 2 seconds)
+-- CAR STATS (Fixed: Balanced handling + Drift Reset)
 -- ============================================
 local function applyMaxStats()
     local carCollection = workspace:FindFirstChild("CarCollection")
@@ -254,15 +270,16 @@ local function applyMaxStats()
     if configModule then
         local success, config = pcall(require, configModule)
         if success and type(config) == "table" then
-            -- Exact variables from decompiled Configuration module
-            config.TopSpeed = 500
-            config.Acceleration = 100
-            config.Horsepower = 1000
-            config.Handling = 5.0
-            config.BrakeForce = 50000
-            config.DriftSlide = 2.0
-            config.SusStiffness = 1.5
-            config.SusDamping = 3000
+            -- FIX 3: Balanced stats so front wheels aren't too hard to control
+            config.TopSpeed = 350
+            config.Acceleration = 50
+            config.Horsepower = 800
+            config.Handling = 3.5
+            config.BrakeForce = 30000
+            config.DriftSlide = 1.5
+            config.SusStiffness = 2.0
+            config.SusDamping = 4000
+            config.SteerAngle = 35
         end
     end
 end
@@ -281,7 +298,6 @@ local function applyDriftMode()
     if configModule then
         local success, config = pcall(require, configModule)
         if success and type(config) == "table" then
-            -- Extreme drift values from decompiled variables
             config.DriftSlide = 5.0
             config.RearGripHandbrake = 5.0
             config.RearGripDrift = 5.0
@@ -330,7 +346,6 @@ Players.PlayerRemoving:Connect(function(p)
     end 
 end)
 
--- Crusher ESP System
 local function setupCrusherESP()
     for _, obj in pairs(State.CrusherESP_Objects) do
         if obj.Billboard then obj.Billboard:Destroy() end
@@ -369,7 +384,6 @@ end
 -- MAIN LOOPS
 -- ============================================
 RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1, function()
-    -- Player ESP
     if State.ESP_Enabled then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LP then
@@ -411,7 +425,6 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
     end
 end)
 
--- CC2 Custom FOV Override Loop
 RunService:BindToRenderStep("CC2_FOVLoop", Enum.RenderPriority.Camera.Value + 4, function()
     if State.CustomFOV then
         if Cam.FieldOfView ~= State.FOVValue then
@@ -421,15 +434,12 @@ RunService:BindToRenderStep("CC2_FOVLoop", Enum.RenderPriority.Camera.Value + 4,
 end)
 
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
-    -- Auto Farm (Fixed: proper crusher teleport + crush cycle)
     if State.AutoFarm then
         local seat = getMyCarSeat()
         if seat then
-            -- Teleport into crusher
             doAutoCrush()
             task.wait(3)
             
-            -- Check if still in car (car might be crushed)
             local seat2 = getMyCarSeat()
             if not seat2 and State.AutoRespawn then
                 findAndClickRespawn()
@@ -466,19 +476,16 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         end
     end
     
-    -- Auto Max Stats (Fixed: re-applies every 2 seconds)
     if State.AutoMaxStats and tick() - State.LastStatCheck > 2 then
         State.LastStatCheck = tick()
         applyMaxStats()
     end
     
-    -- Drift Mode
     if State.DriftMode and tick() - State.LastStatCheck > 2 then
         State.LastStatCheck = tick()
         applyDriftMode()
     end
     
-    -- Anti-Gravity
     if State.AntiGrav then
         local carModel = getMyCarModel()
         if carModel and carModel.PrimaryPart then
@@ -497,13 +504,42 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             carModel.PrimaryPart.CC2_AntiGrav.VectorForce.Force = forceVector
         end
     end
+    
+    -- ============================================
+    -- FLING PVP SYSTEM (New)
+    -- ============================================
+    if State.FlingPvP then
+        local myCar = getMyCarModel()
+        if myCar and myCar.PrimaryPart then
+            local myPos = myCar.PrimaryPart.Position
+            
+            -- Update Visual Barrier Position
+            FlingBarrier.Position = myPos
+            
+            local carCollection = Workspace:FindFirstChild("CarCollection")
+            if carCollection then
+                for _, otherCar in pairs(carCollection:GetChildren()) do
+                    if otherCar:IsA("Model") and otherCar.Name ~= LP.Name and otherCar.PrimaryPart then
+                        local dist = (otherCar.PrimaryPart.Position - myPos).Magnitude
+                        if dist <= State.FlingRadius then
+                            -- Calculate direction away from player, add upward force
+                            local dir = (otherCar.PrimaryPart.Position - myPos).Unit
+                            local flingVec = (dir + Vector3.new(0, 0.5, 0)) * State.FlingPower
+                            
+                            -- Apply fling velocity
+                            otherCar.PrimaryPart.AssemblyLinearVelocity = flingVec
+                        end
+                    end
+                end
+            end
+        end
+    end
 end))
 
 -- ============================================
--- INPUT HANDLING (Fixed: Pickup Car works before gpe check)
+-- INPUT HANDLING 
 -- ============================================
 table.insert(State.Connections, UserInputService.InputBegan:Connect(function(input, gpe)
-    -- Pickup Car: MUST be before gpe check so it works while in car
     if input.UserInputType == Enum.UserInputType.MouseButton1 and State.PickupCar then
         local seat = getMyCarSeat()
         if seat then
@@ -545,14 +581,13 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: Full control at all speeds)
+-- ROCKET BOOSTER (Fixed: Steer with car wheels, no mouse follow)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
-                -- BodyVelocity for forward movement
                 local bv = seat:FindFirstChild("HubBoostBV")
                 if not bv then
                     bv = Instance.new("BodyVelocity")
@@ -562,38 +597,29 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                     bv.Parent = seat
                 end
                 
-                -- FIX 1: BodyAngularVelocity to STOP ALL SPINNING
-                local bav = seat:FindFirstChild("HubBoostBAV")
-                if not bav then
-                    bav = Instance.new("BodyAngularVelocity")
-                    bav.Name = "HubBoostBAV"
-                    bav.MaxTorque = Vector3.new(99999, 99999, 99999)
-                    bav.AngularVelocity = Vector3.new(0, 0, 0)
-                    bav.Parent = seat
-                end
-                
-                -- FIX 2: BodyGyro to lock car facing camera direction
+                -- FIX 1: BodyGyro that ONLY stabilizes Pitch and Roll (NO YAW), allowing steering
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(99999, 99999, 99999)
+                    bg.MaxTorque = Vector3.new(40000, 0, 40000) -- 0 Yaw torque = free steering
                     bg.D = 100
                     bg.Parent = seat
                 end
                 
-                -- Get camera look direction (horizontal only)
-                local camLook = Vector3.new(Cam.CFrame.LookVector.X, 0, Cam.CFrame.LookVector.Z)
-                if camLook.Magnitude > 0 then camLook = camLook.Unit end
+                -- Get the car's actual facing direction (horizontal only)
+                local carLook = seat.CFrame.LookVector
+                local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
+                if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Lock car to face camera direction
-                bg.CFrame = CFrame.lookAt(seat.Position, seat.Position + camLook)
+                -- Lock pitch/roll to prevent flipping, but let Yaw steer
+                bg.CFrame = CFrame.lookAt(seat.Position, seat.Position + flatLook)
                 
-                -- Apply velocity in camera direction (keep current Y velocity for gravity)
+                -- Apply velocity in the direction the car is pointing
                 bv.Velocity = Vector3.new(
-                    camLook.X * State.Boost_Speed, 
+                    flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
-                    camLook.Z * State.Boost_Speed
+                    flatLook.Z * State.Boost_Speed
                 )
             end
         else
@@ -601,16 +627,13 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             local seat = getMyCarSeat()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
-                local bav = seat:FindFirstChild("HubBoostBAV")
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if bv then bv:Destroy() end
-                if bav then bav:Destroy() end
                 if bg then bg:Destroy() end
             end
         end
     end
 
-    -- Cooldown UI
     if State.Q_Boost and State.Boost_Cooldown > tick() then
         local timeLeft = math.ceil(State.Boost_Cooldown - tick())
         CooldownLabel.Text = "Cooldown: " .. tostring(timeLeft) .. "s"
@@ -625,9 +648,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
 end))
 
--- ============================================
--- NOCLIP & PHASE WALLS
--- ============================================
 table.insert(State.Connections, RunService.Stepped:Connect(function()
     if State.Vehicle_Noclip then
         local carModel = getMyCarModel()
@@ -660,9 +680,6 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
--- ============================================
--- VEHICLE FLY
--- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -728,13 +745,14 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Decompiled Code Edition",
+    LoadingSubtitle = "PvP & Control Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
 local TabFarm = Window:CreateTab("AutoFarm", 4483362458)
 local TabVehicle = Window:CreateTab("Vehicle", 4483362458)
+local TabPvP = Window:CreateTab("PvP", 4483362458)
 local TabLocal = Window:CreateTab("Local", 4483362458)
 local TabESP = Window:CreateTab("Visuals", 4483362458)
 local TabMisc = Window:CreateTab("Misc", 4483362458)
@@ -742,26 +760,10 @@ local TabMisc = Window:CreateTab("Misc", 4483362458)
 -- ============================================
 -- AUTOFARM TAB
 -- ============================================
-TabFarm:CreateToggle({
-    Name = "Auto-Crush (Teleport Inside Crusher)",
-    CurrentValue = false, 
-    Callback = function(v) State.AutoFarm = v end
-})
-TabFarm:CreateToggle({
-    Name = "Auto-Respawn (No Cooldown)", 
-    CurrentValue = false, 
-    Callback = function(v) State.AutoRespawn = v end
-})
-TabFarm:CreateToggle({
-    Name = "Auto-Collect Cash", 
-    CurrentValue = false, 
-    Callback = function(v) State.AutoCash = v end
-})
-TabFarm:CreateToggle({
-    Name = "Phase Walls (Nuke Room Access)", 
-    CurrentValue = false, 
-    Callback = function(v) State.PhaseWalls = v end
-})
+TabFarm:CreateToggle({Name = "Auto-Crush (Teleport Inside Crusher)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
+TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
+TabFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback = function(v) State.AutoCash = v end})
+TabFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
 TabFarm:CreateButton({
     Name = "Teleport to Nearest Crusher", 
     Callback = function()
@@ -783,33 +785,31 @@ TabFarm:CreateButton({
 -- ============================================
 TabVehicle:CreateSection("Car Crushers 2 Mods")
 
--- FIX 3: Auto Max Stats (toggle that re-applies every 2 seconds)
 TabVehicle:CreateToggle({
    Name = "Auto Max Car Stats (Permanent)",
    CurrentValue = false,
    Callback = function(v)
        State.AutoMaxStats = v
-       if v then
-           applyMaxStats()
-           Rayfield:Notify({Title = "Stats", Content = "Auto max stats enabled! Will re-apply on respawn.", Duration = 3})
-       end
+       if v then applyMaxStats() end
    end
 })
 
 TabVehicle:CreateButton({
    Name = "Max Stats (One Time)",
-   Callback = function()
-       applyMaxStats()
-       Rayfield:Notify({Title = "Stats", Content = "Stats maxed for current car!", Duration = 3})
-   end
+   Callback = function() applyMaxStats() end
 })
 
+-- FIX 2: Drift Mode Toggle properly resets
 TabVehicle:CreateToggle({
    Name = "Drift Mode (Extreme)",
    CurrentValue = false,
    Callback = function(v)
        State.DriftMode = v
-       if v then applyDriftMode() end
+       if v then
+           applyDriftMode()
+       else
+           applyMaxStats() -- Reset to normal max stats
+       end
    end
 })
 
@@ -833,19 +833,10 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({
-    Name = "Rocket Booster (Press Q) - Stabilized", 
-    CurrentValue = false, 
-    Callback = function(v) 
-        State.Q_Boost = v 
-        CooldownFrame.Visible = v
-    end
-})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Car Steer", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
 TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
-
--- FIX 2: Pickup Car (moved before gpe check in input handler)
 TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
 
 TabVehicle:CreateSection("Actions")
@@ -867,6 +858,38 @@ TabVehicle:CreateButton({
             seat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             seat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         end
+    end
+})
+
+-- ============================================
+-- PVP TAB (New)
+-- ============================================
+TabPvP:CreateSection("Fling System")
+TabPvP:CreateToggle({
+    Name = "Enable Fling Aura",
+    CurrentValue = false,
+    Callback = function(v)
+        State.FlingPvP = v
+        FlingBarrier.Visible = v
+    end
+})
+TabPvP:CreateSlider({
+    Name = "Fling Radius",
+    Range = {10, 100},
+    Increment = 1,
+    CurrentValue = 30,
+    Callback = function(v)
+        State.FlingRadius = v
+        FlingBarrier.Size = Vector3.new(v * 2, v * 2, v * 2)
+    end
+})
+TabPvP:CreateSlider({
+    Name = "Fling Power",
+    Range = {1000, 20000},
+    Increment = 500,
+    CurrentValue = 5000,
+    Callback = function(v)
+        State.FlingPower = v
     end
 })
 
@@ -976,4 +999,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Sit in your car to use features.", Duration = 5})
+Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Check the new PvP tab!", Duration = 5})
