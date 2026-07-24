@@ -8,8 +8,17 @@ local Lighting = game:GetService("Lighting")
 local LP = Players.LocalPlayer
 local Cam = Workspace.CurrentCamera
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-if not Rayfield then return end
+-- Load Linoria UI
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Source/main/linoria/Libraries/Library.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Source/main/linoria/Libraries/SaveManager.lua"))()
+local Options = Library:GetOptions()
+
+local Window = Library:CreateWindow({
+    Title = "Car Crushers 2 - Hub",
+    Footer = "Linoria Edition",
+    NotifySide = "Right",
+    ShowCustomCursor = true
+})
 
 local State = {}
 State.ESP_Enabled = false
@@ -39,7 +48,6 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
--- CC2 Specific States
 State.AntiGrav = false
 State.CustomFOV = false
 State.FOVValue = 70
@@ -47,39 +55,17 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
--- Fling PvP States
 State.FlingPvP = false
 State.FlingRadius = 30
 State.FlingPower = 5000
 
-local CooldownGui = Instance.new("ScreenGui")
-CooldownGui.Name = "BoostCooldown"
-CooldownGui.ResetOnSpawn = false
-pcall(function() CooldownGui.Parent = gethui() end)
-if not CooldownGui.Parent then CooldownGui.Parent = LP:WaitForChild("PlayerGui") end
-
-local CooldownFrame = Instance.new("Frame", CooldownGui)
-CooldownFrame.Size = UDim2.new(0, 200, 0, 50)
-CooldownFrame.Position = UDim2.new(0.5, -100, 1, -100)
-CooldownFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-CooldownFrame.BackgroundTransparency = 0.5
-local ConerRadius = Instance.new("UICorner", CooldownFrame)
-local CooldownLabel = Instance.new("TextLabel", CooldownFrame)
-CooldownLabel.Size = UDim2.new(1, 0, 1, 0)
-CooldownLabel.BackgroundTransparency = 1
-CooldownLabel.Text = "Booster Ready"
-CooldownLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-CooldownLabel.Font = Enum.Font.GothamBold
-CooldownLabel.TextSize = 18
-CooldownFrame.Visible = false
-
--- Fling Visual Barrier (FIXED: Use Transparency instead of Visible)
+-- Fling Visual Barrier
 local FlingBarrier = Instance.new("Part")
 FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 1 -- Hidden initially
+FlingBarrier.Transparency = 1
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
@@ -97,7 +83,6 @@ local function UnloadScript()
     pcall(function() RunService:UnbindFromRenderStep("VehicleFlyLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("CamUnlockLoop") end)
     pcall(function() RunService:UnbindFromRenderStep("CC2_FOVLoop") end)
-    pcall(function() RunService:UnbindFromRenderStep("CrusherESPLoop") end)
     
     for _, obj in pairs(State.ESP_Objects) do
         if obj.Frame then obj.Frame:Destroy() end
@@ -111,14 +96,7 @@ local function UnloadScript()
     
     Cam.FieldOfView = 70
     FlingBarrier:Destroy()
-    
-    local carModel = workspace:FindFirstChild("CarCollection") and workspace.CarCollection:FindFirstChild(LP.Name)
-    if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
-        carModel.PrimaryPart.CC2_AntiGrav:Destroy()
-    end
-    
-    CooldownGui:Destroy()
-    Rayfield:Destroy()
+    Library:Unload()
 end
 
 local function getMyCarSeat()
@@ -145,7 +123,6 @@ end
 local function getAllCrushers()
     local crushers = Workspace:FindFirstChild("Crushers")
     if not crushers then return {} end
-    
     local list = {}
     for _, crusher in pairs(crushers:GetChildren()) do
         if crusher:IsA("Model") or crusher:IsA("Folder") then
@@ -160,14 +137,10 @@ local function getCrusherCenter(crusher)
     if scripted then
         local sensor = scripted:FindFirstChild("Sensor")
         if sensor then return sensor.Position, sensor end
-        
         local bottom = scripted:FindFirstChild("Bottom")
         if bottom and bottom:FindFirstChild("Part") then return bottom.Part.Position, bottom.Part end
-        
-        local bottomPart = scripted:FindFirstChild("Bottom")
-        if bottomPart and bottomPart:IsA("BasePart") then return bottomPart.Position, bottomPart end
+        if bottom and bottom:IsA("BasePart") then return bottom.Position, bottom end
     end
-    
     local largestPart = nil
     local largestSize = 0
     for _, part in pairs(crusher:GetDescendants()) do
@@ -179,7 +152,6 @@ local function getCrusherCenter(crusher)
             end
         end
     end
-    
     if largestPart then return largestPart.Position, largestPart end
     return crusher:GetPivot().Position, nil
 end
@@ -188,11 +160,9 @@ local function getClosestCrusher()
     local seat = getMyCarSeat()
     if not seat then return nil, nil end
     local carPos = seat.Position
-    
     local closest = nil
     local closestPart = nil
     local dist = math.huge
-    
     for _, crusher in pairs(getAllCrushers()) do
         local center, triggerPart = getCrusherCenter(crusher)
         if center then
@@ -204,7 +174,6 @@ local function getClosestCrusher()
             end
         end
     end
-    
     return closest, closestPart
 end
 
@@ -214,18 +183,13 @@ end
 local function doAutoCrush()
     local seat = getMyCarSeat()
     if not seat then return end
-    
     local carModel = seat:FindFirstAncestorOfClass("Model")
     if not carModel then return end
-    
     local crusher, triggerPart = getClosestCrusher()
     if not crusher then return end
-    
     local center, part = getCrusherCenter(crusher)
     if not center then return end
-    
-    local targetPos = center + Vector3.new(0, 5, 0)
-    carModel:PivotTo(CFrame.new(targetPos))
+    carModel:PivotTo(CFrame.new(center + Vector3.new(0, 5, 0)))
 end
 
 local function findAndClickRespawn()
@@ -253,23 +217,17 @@ local function findAndClickRespawn()
 end
 
 -- ============================================
--- CAR STATS (Fixed: Balanced, no suspension touching)
+-- CAR STATS
 -- ============================================
 local function applyMaxStats()
     local carCollection = workspace:FindFirstChild("CarCollection")
     if not carCollection then return end
-    
     local carModel = carCollection:FindFirstChild(LP.Name)
     if not carModel then return end
-    
-    local configModule = carModel:FindFirstChild("Car") 
-        and carModel.Car:FindFirstChild("Body") 
-        and carModel.Car.Body:FindFirstChild("Configuration")
-    
+    local configModule = carModel:FindFirstChild("Car") and carModel.Car:FindFirstChild("Body") and carModel.Car.Body:FindFirstChild("Configuration")
     if configModule then
         local success, config = pcall(require, configModule)
         if success and type(config) == "table" then
-            -- FIX 2: ONLY touch speed/handling, DO NOT touch suspension to keep wheels stable
             config.TopSpeed = 400
             config.Acceleration = 80
             config.Horsepower = 1000
@@ -283,14 +241,9 @@ end
 local function applyDriftMode()
     local carCollection = workspace:FindFirstChild("CarCollection")
     if not carCollection then return end
-    
     local carModel = carCollection:FindFirstChild(LP.Name)
     if not carModel then return end
-    
-    local configModule = carModel:FindFirstChild("Car") 
-        and carModel.Car:FindFirstChild("Body") 
-        and carModel.Car.Body:FindFirstChild("Configuration")
-    
+    local configModule = carModel:FindFirstChild("Car") and carModel.Car:FindFirstChild("Body") and carModel.Car.Body:FindFirstChild("Configuration")
     if configModule then
         local success, config = pcall(require, configModule)
         if success and type(config) == "table" then
@@ -347,7 +300,6 @@ local function setupCrusherESP()
         if obj.Billboard then obj.Billboard:Destroy() end
     end
     State.CrusherESP_Objects = {}
-    
     for _, crusher in pairs(getAllCrushers()) do
         local center, part = getCrusherCenter(crusher)
         if center then
@@ -360,7 +312,6 @@ local function setupCrusherESP()
                 billboard.AlwaysOnTop = true
                 billboard.MaxDistance = 500
                 billboard.Parent = attachPart
-                
                 local label = Instance.new("TextLabel", billboard)
                 label.Size = UDim2.new(1, 0, 1, 0)
                 label.BackgroundTransparency = 1
@@ -369,7 +320,6 @@ local function setupCrusherESP()
                 label.Font = Enum.Font.GothamBold
                 label.TextSize = 16
                 label.TextStrokeTransparency = 0.3
-                
                 State.CrusherESP_Objects[crusher] = {Billboard = billboard, Label = label}
             end
         end
@@ -400,22 +350,14 @@ RunService:BindToRenderStep("HubMainLoop", Enum.RenderPriority.Camera.Value + 1,
                             obj.Box.Position = UDim2.fromOffset(headScreen.X - width/2, headScreen.Y)
                             obj.Box.Size = UDim2.fromOffset(width, height)
                             obj.Box.Visible = true
-                        else 
-                            obj.Box.Visible = false 
-                        end
+                        else obj.Box.Visible = false end
                         if State.ESP_Name then
                             obj.Name.Position = UDim2.fromOffset(headScreen.X, headScreen.Y - 15)
                             obj.Name.Text = player.Name
                             obj.Name.Visible = true
-                        else 
-                            obj.Name.Visible = false 
-                        end
-                    else 
-                        obj.Frame.Visible = false 
-                    end
-                else 
-                    obj.Frame.Visible = false 
-                end
+                        else obj.Name.Visible = false end
+                    else obj.Frame.Visible = false end
+                else obj.Frame.Visible = false end
             end
         end
     end
@@ -423,9 +365,7 @@ end)
 
 RunService:BindToRenderStep("CC2_FOVLoop", Enum.RenderPriority.Camera.Value + 4, function()
     if State.CustomFOV then
-        if Cam.FieldOfView ~= State.FOVValue then
-            Cam.FieldOfView = State.FOVValue
-        end
+        if Cam.FieldOfView ~= State.FOVValue then Cam.FieldOfView = State.FOVValue end
     end
 end)
 
@@ -435,7 +375,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         if seat then
             doAutoCrush()
             task.wait(3)
-            
             local seat2 = getMyCarSeat()
             if not seat2 and State.AutoRespawn then
                 findAndClickRespawn()
@@ -456,9 +395,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         for _, obj in pairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") and (obj.Name:lower():match("cash") or obj.Name:lower():match("money") or obj.Name:lower():match("coin")) then
                 local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    obj.CFrame = hrp.CFrame
-                end
+                if hrp then obj.CFrame = hrp.CFrame end
             end
         end
         task.wait(1)
@@ -487,7 +424,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         if carModel and carModel.PrimaryPart then
             local mass = carModel.PrimaryPart.AssemblyMass
             local forceVector = Vector3.new(0, workspace.Gravity * mass * 0.5, 0)
-            
             if not carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
                 local att = Instance.new("Attachment", carModel.PrimaryPart)
                 att.Name = "CC2_AntiGrav"
@@ -496,35 +432,47 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 vf.Attachment0 = att
                 vf.RelativeTo = Enum.ActuatorRelativeTo.World
             end
-            
             carModel.PrimaryPart.CC2_AntiGrav.VectorForce.Force = forceVector
         end
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM
+    -- FLING PVP SYSTEM (Fixed: Targets everyone, follows avatar/car)
     -- ============================================
     if State.FlingPvP then
-        local myCar = getMyCarModel()
-        if myCar and myCar.PrimaryPart then
-            local myPos = myCar.PrimaryPart.Position
-            
+        -- Determine center position (Avatar if walking, Car if driving)
+        local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        local carModel = getMyCarModel()
+        local myPos = nil
+        
+        if carModel and carModel.PrimaryPart then
+            myPos = carModel.PrimaryPart.Position
+        elseif rootPart then
+            myPos = rootPart.Position
+        end
+        
+        if myPos then
             -- Update Visual Barrier Position
             FlingBarrier.Position = myPos
             
-            local carCollection = Workspace:FindFirstChild("CarCollection")
-            if carCollection then
-                for _, otherCar in pairs(carCollection:GetChildren()) do
-                    if otherCar:IsA("Model") and otherCar.Name ~= LP.Name and otherCar.PrimaryPart then
-                        local dist = (otherCar.PrimaryPart.Position - myPos).Magnitude
-                        if dist <= State.FlingRadius then
-                            -- Calculate direction away from player, add upward force
-                            local dir = (otherCar.PrimaryPart.Position - myPos).Unit
-                            local flingVec = (dir + Vector3.new(0, 0.5, 0)) * State.FlingPower
-                            
-                            -- Apply fling velocity
-                            otherCar.PrimaryPart.AssemblyLinearVelocity = flingVec
-                        end
+            -- Fling everyone in radius
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LP then
+                    local targetChar = plr.Character
+                    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                    local targetCar = workspace:FindFirstChild("CarCollection") and workspace.CarCollection:FindFirstChild(plr.Name)
+                    local targetCarRoot = targetCar and targetCar.PrimaryPart
+                    
+                    local pos1 = targetRoot and targetRoot.Position
+                    local pos2 = targetCarRoot and targetCarRoot.Position
+                    
+                    if pos1 and (pos1 - myPos).Magnitude <= State.FlingRadius then
+                        local dir = (pos1 - myPos).Unit
+                        targetRoot.AssemblyLinearVelocity = (dir + Vector3.new(0, 0.5, 0)) * State.FlingPower
+                    end
+                    if pos2 and (pos2 - myPos).Magnitude <= State.FlingRadius then
+                        local dir = (pos2 - myPos).Unit
+                        targetCarRoot.AssemblyLinearVelocity = (dir + Vector3.new(0, 0.5, 0)) * State.FlingPower
                     end
                 end
             end
@@ -544,7 +492,6 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             if carModel and hrp then
                 local existing = hrp:FindFirstChild("HubCarPickup")
                 if existing then existing:Destroy() end
-                
                 local wc = Instance.new("WeldConstraint")
                 wc.Name = "HubCarPickup"
                 wc.Part0 = hrp
@@ -561,7 +508,7 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
             State.Boost_Active = true
             State.Boost_EndTime = tick() + 1.5
             State.Boost_Cooldown = tick() + 6.5
-            CooldownFrame.Visible = true
+            Library:Notify("Rocket Booster", "Activated!", 4)
         end
     end
 end))
@@ -577,7 +524,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: Pure Car Steering, NO Mouse)
+-- ROCKET BOOSTER (Fixed: No tire locking)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -588,20 +535,18 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    bv.MaxForce = Vector3.new(99999, 0, 99999)
+                    -- FIX 1: MaxForce only on X and Z. 0 on Y allows suspension/steering to work
+                    bv.MaxForce = Vector3.new(1, 0, 1) * 9e9
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
-                
-                -- FIX 1: Completely removed BodyGyro. It now ONLY pushes in the direction the car is facing.
-                -- This gives 100% control to the car's literal front tires/steering.
                 
                 -- Get the car's actual facing direction (horizontal only)
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Apply velocity in the direction the car is pointing
+                -- Apply velocity in the direction the car is pointing, preserve gravity Y
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -616,19 +561,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if bv then bv:Destroy() end
             end
         end
-    end
-
-    if State.Q_Boost and State.Boost_Cooldown > tick() then
-        local timeLeft = math.ceil(State.Boost_Cooldown - tick())
-        CooldownLabel.Text = "Cooldown: " .. tostring(timeLeft) .. "s"
-        CooldownLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-        CooldownFrame.Visible = true
-    elseif State.Q_Boost then
-        CooldownLabel.Text = "Booster Ready (Press Q)"
-        CooldownLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-        CooldownFrame.Visible = true
-    else
-        CooldownFrame.Visible = false
     end
 end))
 
@@ -664,6 +596,9 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
     end
 end))
 
+-- ============================================
+-- VEHICLE FLY (Fixed: Comfortable Up/Down controls)
+-- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
         local seat = getMyCarSeat()
@@ -686,12 +621,15 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             end
             
             local d = Vector3.new(0, 0, 0)
+            -- W/S moves in camera look direction (allows comfortable up/down by looking)
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - Cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
+            
+            -- Space for pure up, LeftShift for pure down
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
             
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
@@ -724,16 +662,8 @@ RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 
 end)
 
 -- ============================================
--- UI CREATION
+-- LINORIA UI CREATION
 -- ============================================
-local Window = Rayfield:CreateWindow({
-    Name = "Car Crushers 2 - Hub",
-    LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Control & PvP Edition",
-    ConfigurationSaving = { Enabled = false },
-    KeySystem = false
-})
-
 local TabFarm = Window:CreateTab("AutoFarm", 4483362458)
 local TabVehicle = Window:CreateTab("Vehicle", 4483362458)
 local TabPvP = Window:CreateTab("PvP / Fling", 4483362458)
@@ -744,11 +674,12 @@ local TabMisc = Window:CreateTab("Misc", 4483362458)
 -- ============================================
 -- AUTOFARM TAB
 -- ============================================
-TabFarm:CreateToggle({Name = "Auto-Crush (Teleport Inside Crusher)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
-TabFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
-TabFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback = function(v) State.AutoCash = v end})
-TabFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
-TabFarm:CreateButton({
+local SectionFarm = TabFarm:CreateLeftGroupbox("AutoFarm")
+SectionFarm:CreateToggle({Name = "Auto-Crush (Teleport Inside Crusher)", CurrentValue = false, Callback = function(v) State.AutoFarm = v end})
+SectionFarm:CreateToggle({Name = "Auto-Respawn (No Cooldown)", CurrentValue = false, Callback = function(v) State.AutoRespawn = v end})
+SectionFarm:CreateToggle({Name = "Auto-Collect Cash", CurrentValue = false, Callback = function(v) State.AutoCash = v end})
+SectionFarm:CreateToggle({Name = "Phase Walls (Nuke Room Access)", CurrentValue = false, Callback = function(v) State.PhaseWalls = v end})
+SectionFarm:CreateButton({
     Name = "Teleport to Nearest Crusher", 
     Callback = function()
         local seat = getMyCarSeat()
@@ -758,7 +689,7 @@ TabFarm:CreateButton({
             if crusher and carModel then
                 local center = getCrusherCenter(crusher)
                 carModel:PivotTo(CFrame.new(center + Vector3.new(0, 5, 0)))
-                Rayfield:Notify({Title = "Teleport", Content = "Teleported to " .. crusher.Name, Duration = 3})
+                Library:Notify("Teleport", "Teleported to " .. crusher.Name, 3)
             end
         end
     end
@@ -767,63 +698,46 @@ TabFarm:CreateButton({
 -- ============================================
 -- VEHICLE TAB
 -- ============================================
-TabVehicle:CreateSection("Car Crushers 2 Mods")
+local SectionMods = TabVehicle:CreateLeftGroupbox("Car Crushers 2 Mods")
+local SectionFly = TabVehicle:CreateRightGroupbox("Flight & Camera")
+local SectionPhysics = TabVehicle:CreateLeftGroupbox("Physics & Speed")
 
-TabVehicle:CreateToggle({
-   Name = "Auto Max Car Stats (Permanent)",
-   CurrentValue = false,
-   Callback = function(v)
-       State.AutoMaxStats = v
-       if v then applyMaxStats() end
-   end
+SectionMods:CreateToggle({Name = "Auto Max Car Stats (Permanent)", CurrentValue = false, Callback = function(v) State.AutoMaxStats = v; if v then applyMaxStats() end end})
+SectionMods:CreateButton({Name = "Max Stats (One Time)", Callback = function() applyMaxStats() end})
+SectionMods:CreateToggle({
+    Name = "Drift Mode (Extreme)", 
+    CurrentValue = false, 
+    Callback = function(v)
+        State.DriftMode = v
+        if v then applyDriftMode() else applyMaxStats() end
+    end
+})
+SectionMods:CreateToggle({
+    Name = "Anti-Gravity Car (Float)", 
+    CurrentValue = false, 
+    Callback = function(Value)
+        State.AntiGrav = Value
+        if not Value then
+            local carModel = getMyCarModel()
+            if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
+                carModel.PrimaryPart.CC2_AntiGrav:Destroy()
+            end
+        end
+    end
 })
 
-TabVehicle:CreateButton({
-   Name = "Max Stats (One Time)",
-   Callback = function() applyMaxStats() end
-})
+SectionFly:CreateToggle({Name = "Vehicle Fly (W/S/Camera)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
+SectionFly:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, Suffix = "Studs", CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
+SectionFly:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
-TabVehicle:CreateToggle({
-   Name = "Drift Mode (Extreme)",
-   CurrentValue = false,
-   Callback = function(v)
-       State.DriftMode = v
-       if v then
-           applyDriftMode()
-       else
-           applyMaxStats() -- Reset to normal
-       end
-   end
-})
+SectionPhysics:CreateToggle({Name = "Rocket Booster (Press Q) - Fixed", CurrentValue = false, Callback = function(v) State.Q_Boost = v end})
+SectionPhysics:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, Suffix = "Speed", CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
+SectionPhysics:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
+SectionPhysics:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
+SectionPhysics:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
 
-TabVehicle:CreateToggle({
-   Name = "Anti-Gravity Car (Float)",
-   CurrentValue = false,
-   Callback = function(Value)
-       State.AntiGrav = Value
-       if not Value then
-           local carModel = getMyCarModel()
-           if carModel and carModel.PrimaryPart and carModel.PrimaryPart:FindFirstChild("CC2_AntiGrav") then
-               carModel.PrimaryPart.CC2_AntiGrav:Destroy()
-           end
-       end
-   end
-})
-
-TabVehicle:CreateSection("Flight & Camera")
-TabVehicle:CreateToggle({Name = "Vehicle Fly (Right-Click to Steer)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
-TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
-TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
-
-TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Car Steer", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
-TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
-TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
-TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
-TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
-
-TabVehicle:CreateSection("Actions")
-TabVehicle:CreateButton({
+local SectionActions = TabVehicle:CreateRightGroupbox("Actions")
+SectionActions:CreateButton({
     Name = "Flip Car Upright",
     Callback = function()
         local carModel = getMyCarModel()
@@ -833,7 +747,7 @@ TabVehicle:CreateButton({
         end
     end
 })
-TabVehicle:CreateButton({
+SectionActions:CreateButton({
     Name = "Super Brakes (Instant Stop)",
     Callback = function()
         local seat = getMyCarSeat()
@@ -845,41 +759,42 @@ TabVehicle:CreateButton({
 })
 
 -- ============================================
--- PVP / FLING TAB (Fix 3: Clearly labeled and populated)
+-- PVP / FLING TAB (Fixed: Targets everyone, barrier follows you)
 -- ============================================
-TabPvP:CreateSection("Fling Aura System")
-TabPvP:CreateToggle({
+local SectionFling = TabPvP:CreateLeftGroupbox("Fling Aura System")
+SectionFling:CreateToggle({
     Name = "Enable Fling Aura",
     CurrentValue = false,
     Callback = function(v)
         State.FlingPvP = v
-        FlingBarrier.Transparency = v and 0.8 or 1 -- Fix: Use transparency instead of Visible
+        FlingBarrier.Transparency = v and 0.8 or 1
     end
 })
-TabPvP:CreateSlider({
+SectionFling:CreateSlider({
     Name = "Fling Radius",
     Range = {10, 100},
     Increment = 1,
+    Suffix = "Studs",
     CurrentValue = 30,
     Callback = function(v)
         State.FlingRadius = v
         FlingBarrier.Size = Vector3.new(v * 2, v * 2, v * 2)
     end
 })
-TabPvP:CreateSlider({
+SectionFling:CreateSlider({
     Name = "Fling Power",
     Range = {1000, 20000},
     Increment = 500,
+    Suffix = "Force",
     CurrentValue = 5000,
-    Callback = function(v)
-        State.FlingPower = v
-    end
+    Callback = function(v) State.FlingPower = v end
 })
 
 -- ============================================
 -- LOCAL TAB
 -- ============================================
-TabLocal:CreateToggle({
+local SectionLocal = TabLocal:CreateLeftGroupbox("Player Mods")
+SectionLocal:CreateToggle({
     Name = "Enable Fly (Player)",
     CurrentValue = false,
     Callback = function(v)
@@ -909,9 +824,9 @@ TabLocal:CreateToggle({
         end
     end
 })
-TabLocal:CreateSlider({Name = "Player Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) State.Fly_Speed = v end})
-TabLocal:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Callback = function(v) State.InfJump = v end})
-TabLocal:CreateToggle({Name = "Player Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
+SectionLocal:CreateSlider({Name = "Player Fly Speed", Range = {10, 500}, Increment = 1, Suffix = "Studs", CurrentValue = 50, Callback = function(v) State.Fly_Speed = v end})
+SectionLocal:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Callback = function(v) State.InfJump = v end})
+SectionLocal:CreateToggle({Name = "Player Noclip", CurrentValue = false, Callback = function(v) State.NoClip = v end})
 
 table.insert(State.Connections, UserInputService.JumpRequest:Connect(function()
     if State.InfJump and LP.Character then
@@ -923,18 +838,18 @@ end))
 -- ============================================
 -- VISUALS TAB
 -- ============================================
-TabESP:CreateToggle({Name = "Enable Player ESP", CurrentValue = false, Callback = function(v) State.ESP_Enabled = v end})
-TabESP:CreateToggle({Name = "Boxes", CurrentValue = true, Callback = function(v) State.ESP_Box = v end})
-TabESP:CreateToggle({Name = "Names", CurrentValue = true, Callback = function(v) State.ESP_Name = v end})
+local SectionESP = TabESP:CreateLeftGroupbox("Player ESP")
+SectionESP:CreateToggle({Name = "Enable Player ESP", CurrentValue = false, Callback = function(v) State.ESP_Enabled = v end})
+SectionESP:CreateToggle({Name = "Boxes", CurrentValue = true, Callback = function(v) State.ESP_Box = v end})
+SectionESP:CreateToggle({Name = "Names", CurrentValue = true, Callback = function(v) State.ESP_Name = v end})
 
-TabESP:CreateSection("Crusher ESP")
-TabESP:CreateToggle({
+local SectionCrusherESP = TabESP:CreateLeftGroupbox("Crusher ESP")
+SectionCrusherESP:CreateToggle({
     Name = "Show Crusher Locations",
     CurrentValue = false,
     Callback = function(v)
         State.CrusherESP_Enabled = v
-        if v then
-            setupCrusherESP()
+        if v then setupCrusherESP()
         else
             for _, obj in pairs(State.CrusherESP_Objects) do
                 if obj.Billboard then obj.Billboard:Destroy() end
@@ -944,27 +859,19 @@ TabESP:CreateToggle({
     end
 })
 
-TabESP:CreateSection("Lighting")
-TabESP:CreateToggle({
+local SectionLight = TabESP:CreateRightGroupbox("Lighting & Camera")
+SectionLight:CreateToggle({
     Name = "Fullbright",
     CurrentValue = false,
     Callback = function(v)
         if v then
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 14
-            Lighting.FogEnd = 100000
-            Lighting.GlobalShadows = false
+            Lighting.Brightness = 2; Lighting.ClockTime = 14; Lighting.FogEnd = 100000; Lighting.GlobalShadows = false
         else
-            Lighting.Brightness = 1
-            Lighting.ClockTime = 12
-            Lighting.FogEnd = 100000
-            Lighting.GlobalShadows = true
+            Lighting.Brightness = 1; Lighting.ClockTime = 12; Lighting.FogEnd = 100000; Lighting.GlobalShadows = true
         end
     end
 })
-
-TabESP:CreateSection("Camera")
-TabESP:CreateToggle({
+SectionLight:CreateToggle({
     Name = "Enable Custom FOV (Override Game)",
     CurrentValue = false,
     Callback = function(v)
@@ -972,14 +879,14 @@ TabESP:CreateToggle({
         if not v then Cam.FieldOfView = 70 end
     end
 })
-TabESP:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, CurrentValue = 70, Callback = function(v) State.FOVValue = v end})
-
-TabESP:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
-TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
+SectionLight:CreateSlider({Name = "Camera FOV", Range = {40, 120}, Increment = 1, Suffix = "FOV", CurrentValue = 70, Callback = function(v) State.FOVValue = v end})
+SectionLight:CreateButton({Name = "Set Time to Day", Callback = function() Lighting.ClockTime = 14 end})
+SectionLight:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.ClockTime = 0 end})
 
 -- ============================================
 -- MISC TAB
 -- ============================================
-TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
+local SectionMisc = TabMisc:CreateLeftGroupbox("Settings")
+SectionMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify({Title = "Car Crushers 2", Content = "Hub loaded! Check PvP/Fling tab!", Duration = 5})
+Library:Notify("Car Crushers 2", "Hub loaded! Check PvP/Fling tab!", 5)
