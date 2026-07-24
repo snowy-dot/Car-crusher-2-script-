@@ -29,7 +29,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
-State.Boost_Speed = 2000
+State.Boost_Speed = 600
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -39,6 +39,7 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
+-- CC2 Specific States
 State.AntiGrav = false
 State.CustomFOV = false
 State.FOVValue = 70
@@ -46,6 +47,7 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
+-- Fling PvP States
 State.FlingPvP = false
 State.FlingRadius = 30
 State.FlingPower = 5000
@@ -77,7 +79,7 @@ FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 1
+FlingBarrier.Transparency = 1 -- Hidden initially
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
@@ -456,9 +458,10 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (Targets everyone, follows avatar/car)
+    -- FLING PVP SYSTEM (Fixed: Targets everyone, follows avatar/car)
     -- ============================================
     if State.FlingPvP then
+        -- Determine center position (Avatar if walking, Car if driving)
         local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local carModel = getMyCarModel()
         local myPos = nil
@@ -470,7 +473,10 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         end
         
         if myPos then
+            -- Update Visual Barrier Position
             FlingBarrier.Position = myPos
+            
+            -- Fling everyone in radius
             for _, plr in pairs(Players:GetPlayers()) do
                 if plr ~= LP then
                     local targetChar = plr.Character
@@ -521,10 +527,10 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
         if tick() > State.Boost_Cooldown then
             State.Boost_Active = true
-            State.Boost_EndTime = tick() + 2.0
+            State.Boost_EndTime = tick() + 1.5
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "Reinforced Stability Engaged!", 4)
+            Rayfield:Notify("Rocket Booster", "Activated!", 4)
         end
     end
 end))
@@ -540,67 +546,29 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Reinforced Stability + Grip Enhancement)
+-- ROCKET BOOSTER (Fixed: No tire locking)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
-                local carModel = seat:FindFirstAncestorOfClass("Model")
-                local mass = seat.AssemblyMass
-                
-                -- 1. Balanced Velocity Force (Pushes car smoothly)
                 local bv = seat:FindFirstChild("HubBoostBV")
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- FIX: Lowered MaxForce and P to prevent breaking tire friction
-                    bv.MaxForce = Vector3.new(50000, 0, 50000)
-                    bv.P = 1000 
+                    -- FIX 1: MaxForce only on X and Z. 0 on Y allows suspension/steering to work
+                    bv.MaxForce = Vector3.new(1, 0, 1) * 9e9
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
-                -- 2. Stabilizer (Anti-Flip, allows steering)
-                local bg = seat:FindFirstChild("HubBoostBG")
-                if not bg then
-                    bg = Instance.new("BodyGyro")
-                    bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(40000, 0, 40000) 
-                    bg.D = 1000 
-                    bg.P = 2000
-                    bg.Parent = seat
-                end
-                
-                -- 3. Reinforce Stability: Downforce (Pushes car down for massive tire grip)
-                local df = seat:FindFirstChild("HubDownforce")
-                if not df then
-                    df = Instance.new("BodyForce")
-                    df.Name = "HubDownforce"
-                    df.Parent = seat
-                end
-                -- Pushes down with 1.5x the car's weight to simulate F1 aerodynamics
-                df.Force = Vector3.new(0, -mass * workspace.Gravity * 1.5, 0)
-                
-                -- 4. Reinforce Stability: Tire Grip Enhancer
-                if carModel then
-                    for _, part in pairs(carModel:GetDescendants()) do
-                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
-                            pcall(function()
-                                part.CustomPhysicalProperties = PhysicalProperties.new(3, 0.5, 0.5) -- 3.0 Friction = Extremely Grippy
-                            end)
-                        end
-                    end
-                end
-                
+                -- Get the car's actual facing direction (horizontal only)
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
-                bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
-                
+                -- Apply velocity in the direction the car is pointing, preserve gravity Y
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -612,23 +580,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             local seat = getMyCarSeat()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
-                local bg = seat:FindFirstChild("HubBoostBG")
-                local df = seat:FindFirstChild("HubDownforce")
                 if bv then bv:Destroy() end
-                if bg then bg:Destroy() end
-                if df then df:Destroy() end
-                
-                -- Restore Tire Grip to normal
-                local carModel = seat:FindFirstAncestorOfClass("Model")
-                if carModel then
-                    for _, part in pairs(carModel:GetDescendants()) do
-                        if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
-                            pcall(function()
-                                part.CustomPhysicalProperties = nil -- Reverts to default Roblox friction
-                            end)
-                        end
-                    end
-                end
             end
         end
     end
@@ -680,7 +632,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Comfortable flat controls)
+-- VEHICLE FLY (Fixed: Comfortable Up/Down controls)
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -704,18 +656,15 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             end
             
             local d = Vector3.new(0, 0, 0)
-            local camLook = Cam.CFrame.LookVector
-            local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
-            local flatRight = Cam.CFrame.RightVector
-            flatRight = Vector3.new(flatRight.X, 0, flatRight.Z).Unit
+            -- W/S moves in camera look direction (allows comfortable up/down by looking)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - Cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
             
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + flatLook end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - flatLook end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - flatRight end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + flatRight end
-            
+            -- Space for pure up, LeftShift for pure down
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
             
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
@@ -726,9 +675,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
                 local lookPos = seat.Position + Cam.CFrame.LookVector
                 bg.CFrame = CFrame.lookAt(seat.Position, lookPos)
-            else
-                local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
-                bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
             end
         end
     else
@@ -756,7 +702,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Reinforced Stability Edition",
+    LoadingSubtitle = "Control & PvP Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -834,13 +780,13 @@ TabVehicle:CreateToggle({
 })
 
 TabVehicle:CreateSection("Flight & Camera")
-TabVehicle:CreateToggle({Name = "Vehicle Fly (Flat W/S, Space/Ctrl)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
+TabVehicle:CreateToggle({Name = "Vehicle Fly (W/S/Camera)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Reinforced Grip", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
-TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {500, 15000}, Increment = 100, CurrentValue = 2000, Callback = function(v) State.Boost_Speed = v end})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Fixed", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
 TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
@@ -868,7 +814,7 @@ TabVehicle:CreateButton({
 })
 
 -- ============================================
--- PVP / FLING TAB 
+-- PVP / FLING TAB (Fixed: Targets everyone, barrier follows you)
 -- ============================================
 TabPvP:CreateSection("Fling Aura System")
 TabPvP:CreateToggle({
@@ -993,4 +939,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Reinforced Stability Engaged!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Check PvP/Fling tab!", 5)
