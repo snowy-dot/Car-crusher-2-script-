@@ -29,7 +29,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
-State.Boost_Speed = 2000 -- Default raised for instant violence
+State.Boost_Speed = 2000 
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -521,10 +521,10 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
         if tick() > State.Boost_Cooldown then
             State.Boost_Active = true
-            State.Boost_EndTime = tick() + 2.0 -- Slightly longer throw
+            State.Boost_EndTime = tick() + 2.0 
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "SLINGSHOT ACTIVATED!", 4)
+            Rayfield:Notify("Rocket Booster", "Violent Throw Engaged!", 4)
         end
     end
 end))
@@ -540,7 +540,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- VIOLENT ROCKET BOOSTER (Stabilized Slingshot)
+-- ROCKET BOOSTER (Violent Acceleration + Stable)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -551,21 +551,20 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- Infinite force for instant snap to max speed
-                    bv.MaxForce = Vector3.new(1e9, 0, 1e9)
+                    -- FIX: 500,000 Force gives violent acceleration without instant snapping
+                    bv.MaxForce = Vector3.new(500000, 0, 500000)
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
-                -- Ultra-Lock Stabilizer to prevent tornadoing at 15k+ speed
+                -- Stabilizer to prevent flipping, tuned to allow steering
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
-                    -- Infinite torque on Pitch/Roll, 0 on Yaw (steering)
-                    bg.MaxTorque = Vector3.new(1e9, 0, 1e9)
-                    bg.D = 10000 -- Ultra damping
-                    bg.P = 10000 
+                    bg.MaxTorque = Vector3.new(1e9, 0, 1e9) 
+                    bg.D = 5000 
+                    bg.P = 2000
                     bg.Parent = seat
                 end
                 
@@ -573,11 +572,10 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Keep car dead flat, allow turning
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
                 
-                -- Apply violent velocity
+                -- Apply accelerating velocity
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -719,7 +717,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Violent Slingshot Edition",
+    LoadingSubtitle = "Violent Acceleration Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -802,9 +800,8 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Slingshot (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
--- Max power raised to 15,000
-TabVehicle:CreateSlider({Name = "Slingshot Power (Violent)", Range = {500, 15000}, Increment = 100, CurrentValue = 2000, Callback = function(v) State.Boost_Speed = v end})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateSlider({Name = "Rocket Boost Power (Violent)", Range = {500, 15000}, Increment = 100, CurrentValue = 2000, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
 TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
@@ -957,4 +954,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Boost is now a violent slingshot!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Violent Acceleration Engaged!", 5)
