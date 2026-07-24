@@ -29,7 +29,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
-State.Boost_Speed = 2000 -- Raised default for fast acceleration
+State.Boost_Speed = 2000
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -521,10 +521,10 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
         if tick() > State.Boost_Cooldown then
             State.Boost_Active = true
-            State.Boost_EndTime = tick() + 2.0 -- Slightly longer throw
+            State.Boost_EndTime = tick() + 2.0
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "Fast Acceleration Engaged!", 4)
+            Rayfield:Notify("Rocket Booster", "Balanced Fast Acceleration!", 4)
         end
     end
 end))
@@ -540,31 +540,37 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fast Acceleration + Comfortable Steering)
+-- ROCKET BOOSTER (Balanced Fast Acceleration + Full Steering)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
         if tick() < State.Boost_EndTime then
             local seat = getMyCarSeat()
             if seat then
+                -- Dynamic Force: Scales with car mass so tires can still grip
+                local mass = seat.AssemblyMass
+                local dynamicForce = math.clamp(mass * 100, 20000, 200000)
+                
                 local bv = seat:FindFirstChild("HubBoostBV")
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- FIX: 500,000 Force gives violent fast acceleration without breaking physics
-                    bv.MaxForce = Vector3.new(500000, 0, 500000)
+                    bv.MaxForce = Vector3.new(dynamicForce, 0, dynamicForce)
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
+                else
+                    bv.MaxForce = Vector3.new(dynamicForce, 0, dynamicForce)
                 end
                 
-                -- FIX: Comfortable Stabilizer. 0 Y torque allows free steering.
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(40000, 0, 40000) 
-                    bg.D = 1000 -- High damping stops flipping without locking steering
+                    bg.MaxTorque = Vector3.new(dynamicForce, 0, dynamicForce) 
+                    bg.D = 1000 
                     bg.Parent = seat
+                else
+                    bg.MaxTorque = Vector3.new(dynamicForce, 0, dynamicForce)
                 end
                 
                 local carLook = seat.CFrame.LookVector
@@ -574,7 +580,6 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
                 
-                -- Apply fast accelerating velocity
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -716,7 +721,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Fast Acceleration Edition",
+    LoadingSubtitle = "Balanced Acceleration Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -953,4 +958,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Fast Acceleration Engaged!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Balanced Acceleration Engaged!", 5)
