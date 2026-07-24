@@ -540,7 +540,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: Stabilizer + No Tornado)
+-- ROCKET BOOSTER (Comfortable Control Edition)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -551,19 +551,19 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- FIX: Lowered MaxForce to prevent physics freakout on light cars
+                    -- Perfect balance of force for violent acceleration + steering control
                     bv.MaxForce = Vector3.new(50000, 0, 50000)
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
-                -- FIX: Added Pitch/Roll Stabilizer. 0 Y torque allows free steering.
+                -- Stabilizer: 0 Y torque allows free steering, high D stops flipping
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
                     bg.MaxTorque = Vector3.new(40000, 0, 40000) 
-                    bg.D = 1000 -- High damping instantly stops flipping/spinning
+                    bg.D = 1000 
                     bg.Parent = seat
                 end
                 
@@ -571,11 +571,9 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Keep the car perfectly flat, but allow turning (Yaw)
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
                 
-                -- Apply velocity
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -641,7 +639,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Fixed: Comfortable flat controls)
+-- VEHICLE FLY (Comfortable flat controls)
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -665,7 +663,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             end
             
             local d = Vector3.new(0, 0, 0)
-            -- FIX: W/S/A/D are strictly horizontal based on camera. Space/Ctrl are vertical.
             local camLook = Cam.CFrame.LookVector
             local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
             local flatRight = Cam.CFrame.RightVector
@@ -685,12 +682,10 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0, 0, 0)
             end
             
-            -- Right-click allows precise 3D aiming
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
                 local lookPos = seat.Position + Cam.CFrame.LookVector
                 bg.CFrame = CFrame.lookAt(seat.Position, lookPos)
             else
-                -- Otherwise, keep the car flat
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
             end
@@ -720,7 +715,7 @@ end)
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Control & PvP Edition",
+    LoadingSubtitle = "Comfort & Control Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -957,4 +952,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Boost & Fly fixed!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Comfort & Control Edition!", 5)
