@@ -39,7 +39,6 @@ State.AntiFling = false
 State.PickupCar = false
 State.Connections = {}
 
--- CC2 Specific States
 State.AntiGrav = false
 State.CustomFOV = false
 State.FOVValue = 70
@@ -47,7 +46,6 @@ State.AutoMaxStats = false
 State.DriftMode = false
 State.LastStatCheck = 0
 
--- Fling PvP States
 State.FlingPvP = false
 State.FlingRadius = 30
 State.FlingPower = 5000
@@ -79,7 +77,7 @@ FlingBarrier.Name = "FlingBarrierVisual"
 FlingBarrier.Shape = Enum.PartType.Ball
 FlingBarrier.Material = Enum.Material.ForceField
 FlingBarrier.Color = Color3.fromRGB(255, 0, 0)
-FlingBarrier.Transparency = 1 -- Hidden initially
+FlingBarrier.Transparency = 1
 FlingBarrier.Anchored = true
 FlingBarrier.CanCollide = false
 FlingBarrier.CanQuery = false
@@ -458,10 +456,9 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (Fixed: Targets everyone, follows avatar/car)
+    -- FLING PVP SYSTEM (Targets everyone, follows avatar/car)
     -- ============================================
     if State.FlingPvP then
-        -- Determine center position (Avatar if walking, Car if driving)
         local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local carModel = getMyCarModel()
         local myPos = nil
@@ -473,10 +470,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
         end
         
         if myPos then
-            -- Update Visual Barrier Position
             FlingBarrier.Position = myPos
-            
-            -- Fling everyone in radius
             for _, plr in pairs(Players:GetPlayers()) do
                 if plr ~= LP then
                     local targetChar = plr.Character
@@ -546,7 +540,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: No tire locking)
+-- ROCKET BOOSTER (Fixed: Stabilizer + No Tornado)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -557,18 +551,31 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- FIX 1: MaxForce only on X and Z. 0 on Y allows suspension/steering to work
-                    bv.MaxForce = Vector3.new(1, 0, 1) * 9e9
+                    -- FIX: Lowered MaxForce to prevent physics freakout on light cars
+                    bv.MaxForce = Vector3.new(50000, 0, 50000)
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
-                -- Get the car's actual facing direction (horizontal only)
+                -- FIX: Added Pitch/Roll Stabilizer. 0 Y torque allows free steering.
+                local bg = seat:FindFirstChild("HubBoostBG")
+                if not bg then
+                    bg = Instance.new("BodyGyro")
+                    bg.Name = "HubBoostBG"
+                    bg.MaxTorque = Vector3.new(40000, 0, 40000) 
+                    bg.D = 1000 -- High damping instantly stops flipping/spinning
+                    bg.Parent = seat
+                end
+                
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Apply velocity in the direction the car is pointing, preserve gravity Y
+                -- Keep the car perfectly flat, but allow turning (Yaw)
+                local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
+                bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
+                
+                -- Apply velocity
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -580,7 +587,9 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             local seat = getMyCarSeat()
             if seat then
                 local bv = seat:FindFirstChild("HubBoostBV")
+                local bg = seat:FindFirstChild("HubBoostBG")
                 if bv then bv:Destroy() end
+                if bg then bg:Destroy() end
             end
         end
     end
@@ -632,7 +641,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Fixed: Comfortable Up/Down controls)
+-- VEHICLE FLY (Fixed: Comfortable flat controls)
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -656,15 +665,19 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             end
             
             local d = Vector3.new(0, 0, 0)
-            -- W/S moves in camera look direction (allows comfortable up/down by looking)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + Cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - Cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - Cam.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + Cam.CFrame.RightVector end
+            -- FIX: W/S/A/D are strictly horizontal based on camera. Space/Ctrl are vertical.
+            local camLook = Cam.CFrame.LookVector
+            local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
+            local flatRight = Cam.CFrame.RightVector
+            flatRight = Vector3.new(flatRight.X, 0, flatRight.Z).Unit
             
-            -- Space for pure up, LeftShift for pure down
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then d = d + flatLook end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then d = d - flatLook end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then d = d - flatRight end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then d = d + flatRight end
+            
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then d = d - Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.new(0, 1, 0) end
             
             if d.Magnitude > 0 then
                 bv.Velocity = d.Unit * State.Vehicle_Speed
@@ -672,9 +685,14 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0, 0, 0)
             end
             
+            -- Right-click allows precise 3D aiming
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
                 local lookPos = seat.Position + Cam.CFrame.LookVector
                 bg.CFrame = CFrame.lookAt(seat.Position, lookPos)
+            else
+                -- Otherwise, keep the car flat
+                local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
+                bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
             end
         end
     else
@@ -780,12 +798,12 @@ TabVehicle:CreateToggle({
 })
 
 TabVehicle:CreateSection("Flight & Camera")
-TabVehicle:CreateToggle({Name = "Vehicle Fly (W/S/Camera)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
+TabVehicle:CreateToggle({Name = "Vehicle Fly (Flat W/S, Space/Ctrl)", CurrentValue = false, Callback = function(v) State.Vehicle_Fly = v end})
 TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Increment = 1, CurrentValue = 150, Callback = function(v) State.Vehicle_Speed = v end})
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Fixed", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
 TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
@@ -814,7 +832,7 @@ TabVehicle:CreateButton({
 })
 
 -- ============================================
--- PVP / FLING TAB (Fixed: Targets everyone, barrier follows you)
+-- PVP / FLING TAB 
 -- ============================================
 TabPvP:CreateSection("Fling Aura System")
 TabPvP:CreateToggle({
@@ -939,4 +957,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Check PvP/Fling tab!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Boost & Fly fixed!", 5)
