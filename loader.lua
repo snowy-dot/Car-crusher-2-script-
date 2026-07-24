@@ -29,7 +29,7 @@ State.Vehicle_Speed = 150
 State.Vehicle_Noclip = false
 State.Q_Boost = false
 State.Boost_Active = false
-State.Boost_Speed = 600
+State.Boost_Speed = 2000 -- Default raised for instant violence
 State.Boost_EndTime = 0
 State.Boost_Cooldown = 0
 State.NoClip = false
@@ -456,7 +456,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (Targets everyone, follows avatar/car)
+    -- FLING PVP SYSTEM 
     -- ============================================
     if State.FlingPvP then
         local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -521,10 +521,10 @@ table.insert(State.Connections, UserInputService.InputBegan:Connect(function(inp
     if input.KeyCode == Enum.KeyCode.Q and State.Q_Boost then
         if tick() > State.Boost_Cooldown then
             State.Boost_Active = true
-            State.Boost_EndTime = tick() + 1.5
+            State.Boost_EndTime = tick() + 2.0 -- Slightly longer throw
             State.Boost_Cooldown = tick() + 6.5
             CooldownFrame.Visible = true
-            Rayfield:Notify("Rocket Booster", "Activated!", 4)
+            Rayfield:Notify("Rocket Booster", "SLINGSHOT ACTIVATED!", 4)
         end
     end
 end))
@@ -540,7 +540,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (Fixed: Stabilizer + No Tornado)
+-- VIOLENT ROCKET BOOSTER (Stabilized Slingshot)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -551,19 +551,21 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 if not bv then
                     bv = Instance.new("BodyVelocity")
                     bv.Name = "HubBoostBV"
-                    -- FIX: Lowered MaxForce to prevent physics freakout on light cars
-                    bv.MaxForce = Vector3.new(50000, 0, 50000)
+                    -- Infinite force for instant snap to max speed
+                    bv.MaxForce = Vector3.new(1e9, 0, 1e9)
                     bv.Velocity = Vector3.new(0,0,0)
                     bv.Parent = seat
                 end
                 
-                -- FIX: Added Pitch/Roll Stabilizer. 0 Y torque allows free steering.
+                -- Ultra-Lock Stabilizer to prevent tornadoing at 15k+ speed
                 local bg = seat:FindFirstChild("HubBoostBG")
                 if not bg then
                     bg = Instance.new("BodyGyro")
                     bg.Name = "HubBoostBG"
-                    bg.MaxTorque = Vector3.new(40000, 0, 40000) 
-                    bg.D = 1000 -- High damping instantly stops flipping/spinning
+                    -- Infinite torque on Pitch/Roll, 0 on Yaw (steering)
+                    bg.MaxTorque = Vector3.new(1e9, 0, 1e9)
+                    bg.D = 10000 -- Ultra damping
+                    bg.P = 10000 
                     bg.Parent = seat
                 end
                 
@@ -571,11 +573,11 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Keep the car perfectly flat, but allow turning (Yaw)
+                -- Keep car dead flat, allow turning
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
                 
-                -- Apply velocity
+                -- Apply violent velocity
                 bv.Velocity = Vector3.new(
                     flatLook.X * State.Boost_Speed, 
                     seat.AssemblyLinearVelocity.Y, 
@@ -641,7 +643,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Fixed: Comfortable flat controls)
+-- VEHICLE FLY 
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -665,7 +667,6 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
             end
             
             local d = Vector3.new(0, 0, 0)
-            -- FIX: W/S/A/D are strictly horizontal based on camera. Space/Ctrl are vertical.
             local camLook = Cam.CFrame.LookVector
             local flatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
             local flatRight = Cam.CFrame.RightVector
@@ -685,12 +686,10 @@ RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value +
                 bv.Velocity = Vector3.new(0, 0, 0)
             end
             
-            -- Right-click allows precise 3D aiming
             if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
                 local lookPos = seat.Position + Cam.CFrame.LookVector
                 bg.CFrame = CFrame.lookAt(seat.Position, lookPos)
             else
-                -- Otherwise, keep the car flat
                 local _, carYaw, _ = seat.CFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.fromEulerAnglesYXZ(0, carYaw, 0)
             end
@@ -715,12 +714,12 @@ RunService:BindToRenderStep("CamUnlockLoop", Enum.RenderPriority.Camera.Value + 
 end)
 
 -- ============================================
--- UI CREATION (Rayfield)
+-- UI CREATION 
 -- ============================================
 local Window = Rayfield:CreateWindow({
     Name = "Car Crushers 2 - Hub",
     LoadingTitle = "Loading Hub...",
-    LoadingSubtitle = "Control & PvP Edition",
+    LoadingSubtitle = "Violent Slingshot Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -803,8 +802,9 @@ TabVehicle:CreateSlider({Name = "Vehicle Fly Speed", Range = {10, 500}, Incremen
 TabVehicle:CreateToggle({Name = "Unlock Camera (360 Look)", CurrentValue = false, Callback = function(v) State.UnlockCam = v end})
 
 TabVehicle:CreateSection("Physics & Speed")
-TabVehicle:CreateToggle({Name = "Rocket Booster (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
-TabVehicle:CreateSlider({Name = "Rocket Boost Power", Range = {100, 3000}, Increment = 50, CurrentValue = 600, Callback = function(v) State.Boost_Speed = v end})
+TabVehicle:CreateToggle({Name = "Rocket Slingshot (Press Q) - Stabilized", CurrentValue = false, Callback = function(v) State.Q_Boost = v; CooldownFrame.Visible = v end})
+-- Max power raised to 15,000
+TabVehicle:CreateSlider({Name = "Slingshot Power (Violent)", Range = {500, 15000}, Increment = 100, CurrentValue = 2000, Callback = function(v) State.Boost_Speed = v end})
 TabVehicle:CreateToggle({Name = "Vehicle Noclip (No Sink)", CurrentValue = false, Callback = function(v) State.Vehicle_Noclip = v end})
 TabVehicle:CreateToggle({Name = "Anti-Fling (Vehicle)", CurrentValue = false, Callback = function(v) State.AntiFling = v end})
 TabVehicle:CreateToggle({Name = "Left-Click Hold Pickup Car", CurrentValue = false, Callback = function(v) State.PickupCar = v end})
@@ -957,4 +957,4 @@ TabESP:CreateButton({Name = "Set Time to Night", Callback = function() Lighting.
 -- ============================================
 TabMisc:CreateButton({Name = "Unload Script", Callback = function() UnloadScript() end})
 
-Rayfield:Notify("Car Crushers 2", "Hub loaded! Boost & Fly fixed!", 5)
+Rayfield:Notify("Car Crushers 2", "Hub loaded! Boost is now a violent slingshot!", 5)
