@@ -458,7 +458,7 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     end
     
     -- ============================================
-    -- FLING PVP SYSTEM (Fixed: Targets everyone, follows avatar/car)
+    -- FLING PVP SYSTEM
     -- ============================================
     if State.FlingPvP then
         local rootPart = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -542,7 +542,7 @@ table.insert(State.Connections, UserInputService.InputEnded:Connect(function(inp
 end))
 
 -- ============================================
--- ROCKET BOOSTER (The Balanced Version You Liked + Pure Grip)
+-- ROCKET BOOSTER (FIXED: No BodyVelocity, uses AssemblyLinearVelocity)
 -- ============================================
 table.insert(State.Connections, RunService.Heartbeat:Connect(function()
     if State.Boost_Active then
@@ -551,37 +551,28 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             if seat then
                 local carModel = seat:FindFirstAncestorOfClass("Model")
                 
-                local bv = seat:FindFirstChild("HubBoostBV")
-                if not bv then
-                    bv = Instance.new("BodyVelocity")
-                    bv.Name = "HubBoostBV"
-                    -- FIX 1: MaxForce only on X and Z. 0 on Y allows suspension/steering to work
-                    bv.MaxForce = Vector3.new(1, 0, 1) * 9e9
-                    bv.Velocity = Vector3.new(0,0,0)
-                    bv.Parent = seat
-                end
-                
-                -- FIX 2: Pure Tire Grip Enhancer (No Downforce, No BodyGyro to mess up suspension)
+                -- Pure Tire Grip Enhancer
                 if carModel and not carModel:GetAttribute("BoostGripActive") then
                     carModel:SetAttribute("BoostGripActive", true)
                     for _, part in pairs(carModel:GetDescendants()) do
                         if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
                             pcall(function()
-                                part.CustomPhysicalProperties = PhysicalProperties.new(5.0, 1.0, 1.0) -- 5.0 Friction = Immune to sliding
+                                part.CustomPhysicalProperties = PhysicalProperties.new(5.0, 1.0, 1.0)
                             end)
                         end
                     end
                 end
                 
-                -- Get the car's actual facing direction (horizontal only)
+                -- Get horizontal direction car is facing
                 local carLook = seat.CFrame.LookVector
                 local flatLook = Vector3.new(carLook.X, 0, carLook.Z)
                 if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end
                 
-                -- Apply velocity in the direction the car is pointing, preserve gravity Y
-                bv.Velocity = Vector3.new(
-                    flatLook.X * State.Boost_Speed, 
-                    seat.AssemblyLinearVelocity.Y, 
+                -- Set velocity directly — physics engine still resolves collisions properly
+                local currentVel = seat.AssemblyLinearVelocity
+                seat.AssemblyLinearVelocity = Vector3.new(
+                    flatLook.X * State.Boost_Speed,
+                    currentVel.Y,
                     flatLook.Z * State.Boost_Speed
                 )
             end
@@ -589,17 +580,14 @@ table.insert(State.Connections, RunService.Heartbeat:Connect(function()
             State.Boost_Active = false
             local seat = getMyCarSeat()
             if seat then
-                local bv = seat:FindFirstChild("HubBoostBV")
-                if bv then bv:Destroy() end
-                
-                -- Revert Tire Grip to normal
+                -- Revert Tire Grip
                 local carModel = seat:FindFirstAncestorOfClass("Model")
                 if carModel and carModel:GetAttribute("BoostGripActive") then
                     carModel:SetAttribute("BoostGripActive", nil)
                     for _, part in pairs(carModel:GetDescendants()) do
                         if part:IsA("BasePart") and (part.Name:lower():match("wheel") or part.Name:lower():match("tire")) then
                             pcall(function()
-                                part.CustomPhysicalProperties = nil -- Reverts to default Roblox friction
+                                part.CustomPhysicalProperties = nil
                             end)
                         end
                     end
@@ -655,7 +643,7 @@ table.insert(State.Connections, RunService.Stepped:Connect(function()
 end))
 
 -- ============================================
--- VEHICLE FLY (Fixed: Comfortable Up/Down controls)
+-- VEHICLE FLY
 -- ============================================
 RunService:BindToRenderStep("VehicleFlyLoop", Enum.RenderPriority.Camera.Value + 2, function()
     if State.Vehicle_Fly then
@@ -835,7 +823,7 @@ TabVehicle:CreateButton({
 })
 
 -- ============================================
--- PVP / FLING TAB (Fixed: Targets everyone, barrier follows you)
+-- PVP / FLING TAB
 -- ============================================
 TabPvP:CreateSection("Fling Aura System")
 TabPvP:CreateToggle({
@@ -924,7 +912,7 @@ TabESP:CreateToggle({
         if v then setupCrusherESP()
         else
             for _, obj in pairs(State.CrusherESP_Objects) do
-                if obj.Billboard then obj.Billboard:Destroy() end
+                if obj.Billboard then obj.Billboard:Destroy()
             end
             State.CrusherESP_Objects = {}
         end
